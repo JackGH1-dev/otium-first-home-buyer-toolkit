@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SVG Preview - First-Home Buyer Toolkit</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        svg {
+            width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>First-Home Buyer Toolkit: 6-Step Flow</h1>
+        <svg width="1160" height="540" viewBox="0 0 1160 540" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="First-Home Buyer Toolkit: 6-Step Flow">
+          <style>
+            .box{fill:#fff;stroke:#222;stroke-width:1.2}
+            .rounded{rx:12;ry:12}
+            .title{font:600 16px Inter,system-ui,Segoe UI,Arial;color:#111;fill:#111}
+            .small{font:400 12px Inter,system-ui,Segoe UI,Arial;color:#333;fill:#333}
+            .legend{font:500 12px Inter,system-ui,Segoe UI,Arial}
+            .good{fill:#e8f5e9;stroke:#2e7d32}
+            .warn{fill:#fff8e1;stroke:#f9a825}
+            .bad{fill:#ffebee;stroke:#c62828}
+            .arrow{stroke:#222;stroke-width:1.4;fill:none;marker-end:url(#arrow)}
+            .dashed{stroke-dasharray:6 4}
+          </style>
+          <defs>
+            <marker id="arrow" markerWidth="12" markerHeight="8" refX="10" refY="4" orient="auto">
+              <path d="M0,0 L12,4 L0,8 Z" fill="#222"/>
+            </marker>
+          </defs>
+
+          <!-- Row positions -->
+          <!-- Top row: A B C E F -->
+          <!-- Middle loop: D under B/C -->
+
+          <!-- A: Borrowing Power -->
+          <rect class="box rounded" x="30" y="60" width="210" height="130" />
+          <text class="title" x="45" y="85">1) Borrowing Power</text>
+          <text class="small" x="45" y="110">Inputs: income, debts, expenses, term, rate(+buffer)</text>
+          <text class="small" x="45" y="128">Calc: serviceable surplus → max loan</text>
+          <text class="small" x="45" y="146">Outputs: loan range; DTI flags</text>
+
+          <!-- B: Max Purchase Price -->
+          <rect class="box rounded" x="260" y="60" width="210" height="130" />
+          <text class="title" x="275" y="85">2) Max Purchase Price</text>
+          <text class="small" x="275" y="110">Inputs: loan, deposit, costs, LVR/LMI, grants</text>
+          <text class="small" x="275" y="128">Calc: no-LMI vs with-LMI ceiling</text>
+          <text class="small" x="275" y="146">Outputs: price band; cash needed</text>
+
+          <!-- C: Budget Fit -->
+          <rect class="box rounded" x="490" y="60" width="210" height="130" />
+          <text class="title" x="505" y="85">3) Budget Fit</text>
+          <text class="small" x="505" y="110">Inputs: budget, stressed rate, ownership costs</text>
+          <text class="small" x="505" y="128">Calc: repayment; total own cost</text>
+          <text class="small" x="505" y="146">Outputs: surplus/deficit; traffic light</text>
+
+          <!-- D: Deposit & Timeline (lower) -->
+          <rect class="box rounded" x="490" y="260" width="210" height="130" />
+          <text class="title" x="505" y="285">4) Deposit & Timeline</text>
+          <text class="small" x="505" y="310">Inputs: savings, contributions, returns</text>
+          <text class="small" x="505" y="328">Calc: time-to-target; scenarios</text>
+          <text class="small" x="505" y="346">Outputs: target date; monthly goal</text>
+
+          <!-- E: Due Diligence -->
+          <rect class="box rounded" x="720" y="60" width="210" height="130" />
+          <text class="title" x="735" y="85">5) Due Diligence</text>
+          <text class="small" x="735" y="110">Shortlist; inspections; strata/building reports</text>
+          <text class="small" x="735" y="128">Outputs: fit score; hidden cost alerts</text>
+
+          <!-- F: Loan & Pre-Approval -->
+          <rect class="box rounded" x="950" y="60" width="210" height="130" />
+          <text class="title" x="965" y="85">6) Loan & Pre-Approval</text>
+          <text class="small" x="965" y="110">Inputs: quotes, docs, preferences</text>
+          <text class="small" x="965" y="128">Calc: true annual cost; readiness</text>
+          <text class="small" x="965" y="146">Outputs: shortlist; checklist; status</text>
+
+          <!-- Arrows main -->
+          <path class="arrow" d="M240,125 L260,125" />
+          <path class="arrow" d="M470,125 L490,125" />
+          <path class="arrow" d="M700,125 L720,125" />
+          <path class="arrow" d="M930,125 L950,125" />
+
+          <!-- C to E (green) -->
+          <rect class="rounded good" x="710" y="210" width="90" height="26"/>
+          <text class="legend" x="718" y="227">Green: proceed</text>
+          <path class="arrow" d="M600,190 C650,190 650,140 720,140" />
+
+          <!-- C to D (amber/red) -->
+          <rect class="rounded warn" x="470" y="210" width="110" height="26"/>
+          <text class="legend" x="478" y="227">Amber: adjust</text>
+          <rect class="rounded bad" x="590" y="210" width="90" height="26"/>
+          <text class="legend" x="598" y="227">Red: save</text>
+          <path class="arrow" d="M600,190 C560,220 560,240 595,260" />
+
+          <!-- D loop back to B and C -->
+          <path class="arrow dashed" d="M490,325 C420,325 420,125 260,125" />
+          <path class="arrow dashed" d="M700,325 C760,325 760,180 700,150" />
+
+          <!-- Legend block -->
+          <rect class="box rounded" x="30" y="420" width="320" height="90"/>
+          <text class="title" x="45" y="445">Legend</text>
+          <rect class="rounded good" x="45" y="460" width="90" height="22"/><text class="legend" x="50" y="476">Green = proceed</text>
+          <rect class="rounded warn" x="155" y="460" width="90" height="22"/><text class="legend" x="160" y="476">Amber = adjust</text>
+          <rect class="rounded bad" x="265" y="460" width="70" height="22"/><text class="legend" x="270" y="476">Red = save</text>
+        </svg>
+    </div>
+</body>
+</html>
