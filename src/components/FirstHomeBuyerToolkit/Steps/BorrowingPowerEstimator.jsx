@@ -8,7 +8,15 @@ import {
   ArrowRight,
   Info,
   Calculator,
-  Users
+  Users,
+  ChevronDown,
+  ChevronUp,
+  Settings,
+  Home,
+  Building,
+  Percent,
+  Calendar,
+  CreditCard
 } from 'lucide-react'
 import { useStepData, useToolkit } from '../ToolkitContext'
 import { 
@@ -28,9 +36,16 @@ const BorrowingPowerEstimator = () => {
   
   const [errors, setErrors] = useState({})
   const [results, setResults] = useState(null)
+  
+  // Collapsible section states
+  const [expandedSections, setExpandedSections] = useState({
+    loanSettings: false,
+    investmentProperty: false
+  })
 
-  // Form state - simplified to 2-card layout
+  // Enhanced form state with all loan preferences
   const [formData, setFormData] = useState({
+    // Basic Info
     scenario: data.scenario || 'single',
     primaryIncome: data.primaryIncome || '',
     secondaryIncome: data.secondaryIncome || '',
@@ -38,18 +53,36 @@ const BorrowingPowerEstimator = () => {
     monthlyLivingExpenses: data.monthlyLivingExpenses || '',
     hasHECS: data.hasHECS || false,
     hecsBalance: data.hecsBalance || '',
-    // Simplified liabilities - just monthly total
     monthlyLiabilities: data.monthlyLiabilities || '',
-    // Fixed loan parameters for simplicity
-    interestRate: 5.5,
-    termYears: 30,
-    loanType: 'principal_interest',
-    repaymentFrequency: 'monthly'
+    
+    // Loan Preferences
+    propertyType: data.propertyType || 'owner-occupied', // 'owner-occupied' or 'investment'
+    loanType: data.loanType || 'principal_interest',
+    repaymentFrequency: data.repaymentFrequency || 'monthly',
+    termYears: data.termYears || 30,
+    interestRate: data.interestRate || 5.5,
+    
+    // Investment Property Specific
+    expectedRentalYield: data.expectedRentalYield || 4.5,
+    managementFees: data.managementFees || 8,
+    marginalTaxRate: data.marginalTaxRate || 32.5
   })
+
+  // Toggle collapsible sections
+  const toggleSection = (section) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }))
+  }
 
   // Update form data
   const handleInputChange = (field, value) => {
-    const numericFields = ['primaryIncome', 'secondaryIncome', 'monthlyLivingExpenses', 'hecsBalance', 'dependents', 'monthlyLiabilities']
+    const numericFields = [
+      'primaryIncome', 'secondaryIncome', 'monthlyLivingExpenses', 'hecsBalance', 
+      'dependents', 'monthlyLiabilities', 'interestRate', 'termYears',
+      'expectedRentalYield', 'managementFees', 'marginalTaxRate'
+    ]
     const numericValue = numericFields.includes(field) 
       ? parseFloat(value) || 0 
       : value
@@ -407,6 +440,229 @@ const BorrowingPowerEstimator = () => {
                 </motion.div>
               )}
             </div>
+
+            {/* Property Type Selection */}
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h4 className="text-sm font-semibold text-gray-700 mb-3">Property Type</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {[
+                  { 
+                    value: 'owner-occupied', 
+                    label: 'Owner Occupied', 
+                    icon: Home,
+                    desc: 'Live in the property'
+                  },
+                  { 
+                    value: 'investment', 
+                    label: 'Investment Property', 
+                    icon: Building,
+                    desc: 'Rent out for income'
+                  }
+                ].map((type) => (
+                  <button
+                    key={type.value}
+                    onClick={() => handleInputChange('propertyType', type.value)}
+                    className={`p-3 rounded-lg border-2 transition-all text-left ${
+                      formData.propertyType === type.value
+                        ? 'bg-blue-50 border-blue-500 text-blue-700'
+                        : 'bg-white border-gray-200 text-gray-700 hover:border-blue-300'
+                    }`}
+                  >
+                    <div className="flex items-start space-x-3">
+                      <type.icon className="h-5 w-5 mt-0.5" />
+                      <div>
+                        <div className="font-medium text-sm">{type.label}</div>
+                        <div className="text-xs opacity-75">{type.desc}</div>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Advanced Loan Settings - Collapsible */}
+            <div className="border border-gray-200 rounded-lg">
+              <button
+                onClick={() => toggleSection('loanSettings')}
+                className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors"
+              >
+                <div className="flex items-center space-x-2">
+                  <Settings className="h-5 w-5 text-gray-600" />
+                  <span className="font-semibold text-gray-700">Advanced Loan Settings</span>
+                </div>
+                {expandedSections.loanSettings ? (
+                  <ChevronUp className="h-5 w-5 text-gray-400" />
+                ) : (
+                  <ChevronDown className="h-5 w-5 text-gray-400" />
+                )}
+              </button>
+              
+              {expandedSections.loanSettings && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="px-4 pb-4 space-y-4 border-t border-gray-100"
+                >
+                  {/* Loan Type */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Loan Type
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {[
+                        { value: 'principal_interest', label: 'Principal & Interest' },
+                        { value: 'interest_only', label: 'Interest Only' }
+                      ].map((type) => (
+                        <button
+                          key={type.value}
+                          onClick={() => handleInputChange('loanType', type.value)}
+                          className={`p-2 rounded-md text-sm font-medium transition-all ${
+                            formData.loanType === type.value
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-white text-gray-700 border border-gray-300 hover:border-blue-300'
+                          }`}
+                        >
+                          {type.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Repayment Frequency */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Repayment Frequency
+                    </label>
+                    <select
+                      value={formData.repaymentFrequency}
+                      onChange={(e) => handleInputChange('repaymentFrequency', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                    >
+                      <option value="monthly">Monthly</option>
+                      <option value="fortnightly">Fortnightly</option>
+                      <option value="weekly">Weekly</option>
+                    </select>
+                  </div>
+
+                  {/* Term and Rate */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Loan Term (Years)
+                      </label>
+                      <div className="relative">
+                        <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <input
+                          type="number"
+                          min="5"
+                          max="30"
+                          value={formData.termYears}
+                          onChange={(e) => handleInputChange('termYears', e.target.value)}
+                          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                          placeholder="30"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Interest Rate (%)
+                      </label>
+                      <div className="relative">
+                        <Percent className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0.1"
+                          max="15"
+                          value={formData.interestRate}
+                          onChange={(e) => handleInputChange('interestRate', e.target.value)}
+                          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                          placeholder="5.5"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </div>
+
+            {/* Investment Property Details - Collapsible */}
+            {formData.propertyType === 'investment' && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className="border border-orange-200 rounded-lg"
+              >
+                <button
+                  onClick={() => toggleSection('investmentProperty')}
+                  className="w-full flex items-center justify-between p-4 text-left hover:bg-orange-50 transition-colors"
+                >
+                  <div className="flex items-center space-x-2">
+                    <Building className="h-5 w-5 text-orange-600" />
+                    <span className="font-semibold text-orange-700">Investment Property Details</span>
+                  </div>
+                  {expandedSections.investmentProperty ? (
+                    <ChevronUp className="h-5 w-5 text-orange-400" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-orange-400" />
+                  )}
+                </button>
+                
+                {expandedSections.investmentProperty && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="px-4 pb-4 space-y-4 border-t border-orange-100"
+                  >
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Expected Rental Yield (%)
+                        </label>
+                        <div className="relative">
+                          <Percent className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            max="10"
+                            value={formData.expectedRentalYield}
+                            onChange={(e) => handleInputChange('expectedRentalYield', e.target.value)}
+                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                            placeholder="4.5"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Marginal Tax Rate (%)
+                        </label>
+                        <div className="relative">
+                          <Percent className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                          <input
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            max="47"
+                            value={formData.marginalTaxRate}
+                            onChange={(e) => handleInputChange('marginalTaxRate', e.target.value)}
+                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                            placeholder="32.5"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-xs text-orange-700 bg-orange-50 p-3 rounded-lg">
+                      <Info className="inline h-3 w-3 mr-1" />
+                      Investment properties have higher interest rates and stricter serviceability requirements. 
+                      Rental income is typically assessed at 80% for serviceability calculations.
+                    </div>
+                  </motion.div>
+                )}
+              </motion.div>
+            )}
+
           </div>
         </motion.div>
 

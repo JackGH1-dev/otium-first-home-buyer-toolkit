@@ -667,6 +667,82 @@ export const calculateReverseAffordability = (params) => {
   }
 }
 
+// Calculate negative gearing tax benefits for investment properties
+export const calculateNegativeGearingBenefit = (rentalIncome, expenses, marginalTaxRate) => {
+  // Calculate annual rental loss (if property is negatively geared)
+  const rentalLoss = Math.max(0, expenses - rentalIncome)
+  
+  // Calculate tax benefit based on marginal tax rate
+  const annualTaxSaving = rentalLoss * marginalTaxRate
+  const monthlyTaxBenefit = annualTaxSaving / 12
+  
+  // Calculate effective rental yield after tax benefits
+  const netRentalCost = rentalLoss - annualTaxSaving
+  
+  return {
+    rentalLoss: Math.round(rentalLoss),
+    annualTaxSaving: Math.round(annualTaxSaving),
+    monthlyTaxBenefit: Math.round(monthlyTaxBenefit),
+    netRentalCost: Math.round(netRentalCost),
+    isNegativelyGeared: rentalLoss > 0,
+    effectiveRentalReturn: rentalIncome + annualTaxSaving
+  }
+}
+
+// Australian marginal tax rate brackets (2024-25)
+export const getAustralianTaxBracket = (annualIncome) => {
+  if (annualIncome <= 18200) return 0
+  if (annualIncome <= 45000) return 19
+  if (annualIncome <= 120000) return 32.5
+  if (annualIncome <= 180000) return 37
+  return 45
+}
+
+// Calculate assessable rental income for lending (typically 80% of gross rent)
+export const calculateAssessableRentalIncome = (grossRent, assessmentRate = 0.8) => {
+  return grossRent * assessmentRate
+}
+
+// Investment property serviceability calculation
+export const calculateInvestmentServiceability = (params) => {
+  const {
+    loanAmount,
+    interestRate,
+    rentalIncome,
+    otherIncome,
+    expenses,
+    marginalTaxRate = 0.325,
+    assessmentBuffer = 0.03 // APRA 3% buffer
+  } = params
+
+  const serviceabilityRate = interestRate + assessmentBuffer
+  const assessableRental = calculateAssessableRentalIncome(rentalIncome)
+  const totalAssessableIncome = assessableRental + otherIncome
+  
+  // Calculate monthly repayment at stressed rate
+  const monthlyRepayment = calculateMortgagePayment(loanAmount, serviceabilityRate, 30) / 12
+  const monthlySurplus = (totalAssessableIncome / 12) - expenses - monthlyRepayment
+  
+  // Calculate negative gearing benefits
+  const annualInterest = loanAmount * interestRate
+  const totalAnnualExpenses = annualInterest + (expenses * 12)
+  const negativeGearingCalc = calculateNegativeGearingBenefit(
+    rentalIncome, 
+    totalAnnualExpenses, 
+    marginalTaxRate
+  )
+  
+  return {
+    serviceabilityRate: serviceabilityRate,
+    assessableIncome: Math.round(totalAssessableIncome),
+    monthlyRepayment: Math.round(monthlyRepayment),
+    monthlySurplus: Math.round(monthlySurplus),
+    passesServiceability: monthlySurplus > 0,
+    negativeGearingBenefit: negativeGearingCalc.annualTaxSaving,
+    effectiveYield: (rentalIncome + negativeGearingCalc.annualTaxSaving) / loanAmount * 100
+  }
+}
+
 // Validation helpers
 export const validateFinancialInputs = (inputs) => {
   const errors = {}
