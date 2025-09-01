@@ -10,7 +10,8 @@ import {
   MapPin,
   Calculator,
   TrendingUp,
-  Home
+  Home,
+  HelpCircle
 } from 'lucide-react'
 import { 
   smartAutoCalculate, 
@@ -23,6 +24,7 @@ import {
   calculateUpfrontCosts,
   calculateMortgageRegistrationFee,
   calculateTransferFee,
+  calculateMortgagePayment,
   HOME_GUARANTEE_SCHEME_CAPS
 } from '../../../utils/financialCalculations'
 
@@ -38,20 +40,67 @@ const australianStates = [
 ]
 
 const SmartCalculatorDemo = ({ borrowingPower = 600000, initialState = 'NSW', onScenariosCalculated = null }) => {
-  // Field values
+  // State for tooltip visibility
+  const [showStrategyTooltip, setShowStrategyTooltip] = useState(false)
+  
+  // Close tooltip when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showStrategyTooltip && !event.target.closest('.strategy-tooltip-container')) {
+        setShowStrategyTooltip(false)
+      }
+    }
+    
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showStrategyTooltip])
+  
+  // Helper function to get user-friendly strategy names
+  const getStrategyDisplayName = (strategy) => {
+    const strategyNames = {
+      'PROPERTY_FUNDS': 'Property Price & Available Funds',
+      'PROPERTY_LVR': 'Property Price & Target LVR',
+      'FUNDS_LVR': 'Available Funds & Target LVR',
+      'LOAN_PROPERTY': 'Loan Amount & Property Price',
+      'LOAN_LVR': 'Loan Amount & Target LVR',
+      'LOAN_FUNDS': 'Loan Amount & Available Funds',
+      'SURPLUS_ANALYSIS': 'Surplus Funds Analysis',
+      null: 'No Calculation',
+      undefined: 'No Calculation'
+    }
+    return strategyNames[strategy] || strategy || 'No Calculation'
+  }
+  
+  // Helper function to get strategy explanation
+  const getStrategyExplanation = (strategy) => {
+    const explanations = {
+      'PROPERTY_FUNDS': 'You\'ve specified the property price and your available funds. I\'m calculating the loan amount needed and what your LVR will be.',
+      'PROPERTY_LVR': 'You\'ve specified the property price and your target LVR. I\'m calculating how much deposit you\'ll need and the loan amount.',
+      'FUNDS_LVR': 'You\'ve specified your available funds and target LVR. I\'m calculating the maximum property price you can afford.',
+      'LOAN_PROPERTY': 'You\'ve specified your loan amount and property price. I\'m calculating the deposit needed and your resulting LVR.',
+      'LOAN_LVR': 'You\'ve specified your loan amount and target LVR. I\'m calculating the property price and deposit required.',
+      'LOAN_FUNDS': 'You\'ve specified your loan amount and available funds. I\'m calculating the maximum property price and your LVR.',
+      'SURPLUS_ANALYSIS': 'All four fields are locked. I\'m checking if your numbers work together and calculating any surplus or shortfall.',
+      null: 'Lock at least 2 fields to start calculating.',
+      undefined: 'Lock at least 2 fields to start calculating.'
+    }
+    return explanations[strategy] || 'Select fields to lock and I\'ll calculate the rest.'
+  }
+
+  // Field values - Default to LOAN_FUNDS strategy
   const [values, setValues] = useState({
-    propertyValue: 750000,
-    fundsAvailable: 150000,
-    lvr: 80,
-    loanAmount: 600000
+    propertyValue: 0, // Will be auto-calculated
+    fundsAvailable: 100000, // Default $100k available funds
+    lvr: 0, // Will be auto-calculated
+    loanAmount: borrowingPower // Use maximum borrowing power
   })
 
   // Location and buyer status
   const [state, setState] = useState(initialState)
   const [isFirstHomeBuyer, setIsFirstHomeBuyer] = useState(false)
 
-  // Field lock states (determines which fields are manually input vs auto-calculated)
-  const [lockedFields, setLockedFields] = useState(['propertyValue', 'lvr'])
+  // Field lock states - Default to LOAN_FUNDS strategy (Loan Amount & Available Funds)
+  const [lockedFields, setLockedFields] = useState(['loanAmount', 'fundsAvailable'])
   
   // Calculation results
   const [results, setResults] = useState(null)
@@ -457,9 +506,49 @@ const SmartCalculatorDemo = ({ borrowingPower = 600000, initialState = 'NSW', on
         </div>
         
         <div className="space-y-2">
-          <p className="text-sm text-gray-600">
-            Current strategy: <span className="font-medium text-blue-600">{results?.strategy || 'None'}</span>
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-sm text-gray-600">
+              Current strategy: <span className="font-medium text-blue-600">{getStrategyDisplayName(results?.strategy)}</span>
+            </p>
+            <div className="relative strategy-tooltip-container">
+              <button
+                onClick={() => setShowStrategyTooltip(!showStrategyTooltip)}
+                className="p-1 rounded-full hover:bg-gray-100 transition-colors"
+                aria-label="Strategy explanation"
+              >
+                <HelpCircle className="h-4 w-4 text-gray-400 hover:text-blue-600" />
+              </button>
+              {showStrategyTooltip && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: -5 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: -5 }}
+                  className="absolute left-0 bottom-full mb-2 w-72 p-3 bg-white rounded-lg shadow-xl border border-gray-200 z-50"
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <h4 className="text-sm font-semibold text-gray-900">How this works:</h4>
+                    <button
+                      onClick={() => setShowStrategyTooltip(false)}
+                      className="text-gray-400 hover:text-gray-600 text-xs"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-600 leading-relaxed">
+                    {getStrategyExplanation(results?.strategy)}
+                  </p>
+                  <div className="mt-2 pt-2 border-t border-gray-100">
+                    <p className="text-xs text-blue-600 font-medium">
+                      🔒 Locked fields = Your inputs
+                    </p>
+                    <p className="text-xs text-green-600 font-medium">
+                      ✓ Unlocked fields = Auto-calculated
+                    </p>
+                  </div>
+                </motion.div>
+              )}
+            </div>
+          </div>
           <div className="flex flex-wrap gap-2 text-xs">
             <span className="text-gray-500">Locked fields ({lockedFields.length}/4):</span>
             {lockedFields.map(field => (
@@ -650,6 +739,26 @@ const SmartCalculatorDemo = ({ borrowingPower = 600000, initialState = 'NSW', on
         </div>
       </div>
 
+      {/* Monthly P&I Repayment Display */}
+      {values.loanAmount > 0 && (
+        <div className="col-span-1 md:col-span-2 mt-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-sm font-semibold text-gray-700 mb-1">Estimated Monthly Repayment (P&I)</h4>
+              <p className="text-xs text-gray-600">Based on 5.5% interest rate over 30 years</p>
+            </div>
+            <div className="text-right">
+              <div className="text-2xl font-bold text-blue-600">
+                {formatCurrency(Math.round(calculateMortgagePayment(values.loanAmount, 0.055, 30)))}
+              </div>
+              <p className="text-xs text-gray-600 mt-1">
+                {formatCurrency(Math.round(calculateMortgagePayment(values.loanAmount, 0.055, 30) * 12 / 52))}/week
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Validation Results */}
       {results?.validation && (
         <div className="space-y-3 mb-4">
@@ -839,28 +948,6 @@ const SmartCalculatorDemo = ({ borrowingPower = 600000, initialState = 'NSW', on
                   <div className="text-sm">
                     <p className="font-medium text-orange-900">High LVR Warning</p>
                     <p className="text-orange-700">LVR above 90% means higher LMI costs and limited lender options</p>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {/* Borrowing Power Exceeded Warning */}
-            {results.borrowingPowerLimited && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg"
-              >
-                <div className="flex items-start space-x-2">
-                  <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5" />
-                  <div className="text-sm">
-                    <p className="font-medium text-red-900">Borrowing Power Exceeded</p>
-                    <p className="text-red-700">
-                      This loan amount ({formatCurrency(results.loanAmount)}) exceeds your maximum borrowing power ({formatCurrency(borrowingPower)}) by {formatCurrency(results.borrowingPowerShortfall)}.
-                    </p>
-                    <p className="text-red-700 mt-1">
-                      <strong>Realistic loan amount:</strong> {formatCurrency(results.maxAffordableLoanAmount || borrowingPower)}
-                    </p>
                   </div>
                 </div>
               </motion.div>

@@ -19,6 +19,7 @@ import {
   calculateMaxPurchasePrice, 
   calculateStampDuty,
   calculateLMI,
+  calculateMortgagePayment,
   formatCurrency,
   HOME_GUARANTEE_SCHEME_CAPS,
   isEligibleForHomeGuaranteeScheme,
@@ -260,7 +261,7 @@ const MaxPurchasePriceCalculator = () => {
                     <div className="flex items-start justify-between mb-4">
                       <div>
                         <h3 className="text-lg font-bold text-blue-900">🏛️ Home Guarantee Scheme</h3>
-                        <p className="text-sm text-blue-700">5% deposit • 95% LVR • No LMI Required</p>
+                        <p className="text-sm text-blue-700">Minimum 5% deposit needed • Up to 95% no LMI</p>
                       </div>
                       <div className="flex flex-col items-end space-y-1">
                         <span className="px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded-full">
@@ -274,14 +275,24 @@ const MaxPurchasePriceCalculator = () => {
                     <div className="text-3xl font-bold text-blue-600 mb-3">
                       {formatCurrency(smartCalculatorScenarios.homeGuarantee.maxPrice)}
                     </div>
-                    <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="grid grid-cols-2 gap-3 text-sm mb-3">
                       <div>
                         <span className="text-gray-600">Loan Amount:</span>
                         <div className="font-medium">{formatCurrency(smartCalculatorScenarios.homeGuarantee.loanAmount)}</div>
                       </div>
                       <div>
-                        <span className="text-gray-600">Total Cash Required:</span>
+                        <span className="text-gray-600">Monthly P&I:</span>
+                        <div className="font-bold text-blue-600">{formatCurrency(Math.round(calculateMortgagePayment(smartCalculatorScenarios.homeGuarantee.loanAmount, 0.055, 30)))}</div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <span className="text-gray-600">Cash Required:</span>
                         <div className="font-medium">{formatCurrency(smartCalculatorScenarios.homeGuarantee.cashRequired)}</div>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">LVR:</span>
+                        <div className="font-medium">{smartCalculatorScenarios.homeGuarantee.lvr}%</div>
                       </div>
                     </div>
                     <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
@@ -294,13 +305,13 @@ const MaxPurchasePriceCalculator = () => {
                         <div className="font-medium">{formatCurrency(smartCalculatorScenarios.homeGuarantee.costs.stampDuty)}</div>
                       </div>
                       <div className="bg-blue-100 rounded p-2">
-                        <span className="text-blue-600">Other Costs:</span>
+                        <span className="text-blue-600">Other:</span>
                         <div className="font-medium">{formatCurrency(smartCalculatorScenarios.homeGuarantee.costs.total - smartCalculatorScenarios.homeGuarantee.costs.stampDuty)}</div>
                       </div>
                     </div>
-                    <div className="mt-3 p-2 bg-blue-100 rounded-lg">
+                    <div className="mt-2 p-2 bg-blue-100 rounded-lg">
                       <p className="text-xs text-blue-800">
-                        ✓ No LMI required • ✓ Only 5% deposit needed • ✓ Government guarantee covers lender risk
+                        ✓ No LMI • ✓ 5% deposit • ✓ Govt backed
                       </p>
                     </div>
                   </div>
@@ -320,14 +331,24 @@ const MaxPurchasePriceCalculator = () => {
                   <div className="text-3xl font-bold text-green-600 mb-3">
                     {formatCurrency(smartCalculatorScenarios.conservative.maxPrice)}
                   </div>
-                  <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="grid grid-cols-2 gap-3 text-sm mb-3">
                     <div>
                       <span className="text-gray-600">Loan Amount:</span>
                       <div className="font-medium">{formatCurrency(smartCalculatorScenarios.conservative.loanAmount)}</div>
                     </div>
                     <div>
-                      <span className="text-gray-600">Total Cash Required:</span>
+                      <span className="text-gray-600">Monthly P&I:</span>
+                      <div className="font-bold text-green-600">{formatCurrency(Math.round(calculateMortgagePayment(smartCalculatorScenarios.conservative.loanAmount, 0.055, 30)))}</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-gray-600">Cash Required:</span>
                       <div className="font-medium">{formatCurrency(smartCalculatorScenarios.conservative.cashRequired)}</div>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">LVR:</span>
+                      <div className="font-medium">{smartCalculatorScenarios.conservative.lvr}%</div>
                     </div>
                   </div>
                   <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
@@ -340,7 +361,7 @@ const MaxPurchasePriceCalculator = () => {
                       <div className="font-medium">{formatCurrency(smartCalculatorScenarios.conservative.costs.stampDuty)}</div>
                     </div>
                     <div className="bg-green-100 rounded p-2">
-                      <span className="text-green-600">Other Costs:</span>
+                      <span className="text-green-600">Other:</span>
                       <div className="font-medium">{formatCurrency(smartCalculatorScenarios.conservative.costs.total - smartCalculatorScenarios.conservative.costs.stampDuty)}</div>
                     </div>
                   </div>
@@ -360,14 +381,24 @@ const MaxPurchasePriceCalculator = () => {
                   <div className="text-3xl font-bold text-orange-600 mb-3">
                     {formatCurrency(smartCalculatorScenarios.maximum.maxPrice)}
                   </div>
-                  <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="grid grid-cols-2 gap-3 text-sm mb-3">
                     <div>
                       <span className="text-gray-600">Loan Amount:</span>
                       <div className="font-medium">{formatCurrency(smartCalculatorScenarios.maximum.loanAmount)}</div>
                     </div>
                     <div>
-                      <span className="text-gray-600">Total Cash Required:</span>
+                      <span className="text-gray-600">Monthly P&I:</span>
+                      <div className="font-bold text-orange-600">{formatCurrency(Math.round(calculateMortgagePayment(smartCalculatorScenarios.maximum.loanAmount, 0.055, 30)))}</div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-gray-600">Cash Required:</span>
                       <div className="font-medium">{formatCurrency(smartCalculatorScenarios.maximum.cashRequired)}</div>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">LVR:</span>
+                      <div className="font-medium">{smartCalculatorScenarios.maximum.lvr}%</div>
                     </div>
                   </div>
                   <div className="mt-3 grid grid-cols-4 gap-2 text-xs">
@@ -376,7 +407,7 @@ const MaxPurchasePriceCalculator = () => {
                       <div className="font-medium">{formatCurrency(smartCalculatorScenarios.maximum.maxPrice - smartCalculatorScenarios.maximum.loanAmount)}</div>
                     </div>
                     <div className="bg-orange-100 rounded p-2">
-                      <span className="text-orange-600">Stamp Duty:</span>
+                      <span className="text-orange-600">Stamp:</span>
                       <div className="font-medium">{formatCurrency(smartCalculatorScenarios.maximum.costs.stampDuty)}</div>
                     </div>
                     <div className="bg-red-100 rounded p-2">
@@ -388,9 +419,9 @@ const MaxPurchasePriceCalculator = () => {
                       <div className="font-medium">{formatCurrency(smartCalculatorScenarios.maximum.costs.total - smartCalculatorScenarios.maximum.costs.stampDuty - smartCalculatorScenarios.maximum.costs.lmi)}</div>
                     </div>
                   </div>
-                  <div className="mt-3 p-2 bg-orange-100 rounded-lg">
+                  <div className="mt-2 p-2 bg-orange-100 rounded-lg">
                     <p className="text-xs text-orange-800">
-                      ⚠️ Higher monthly payments due to LMI • Limited lender options at high LVR
+                      ⚠️ Higher payments with LMI • Limited lenders at {smartCalculatorScenarios.maximum.lvr}% LVR
                     </p>
                   </div>
                 </div>
