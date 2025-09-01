@@ -91,7 +91,7 @@ export const smartAutoCalculate = (inputs, lockedFields, borrowingPower, state =
       result = calculateFromPropertyAndFunds(propertyValue, fundsAvailable, state)
       break
     case 'PROPERTY_LVR':
-      result = calculateFromPropertyAndLVR(propertyValue, lvr, state)
+      result = calculateFromPropertyAndLVR(propertyValue, lvr, state, borrowingPower)
       break
     case 'FUNDS_LVR':
       result = calculateFromFundsAndLVR(fundsAvailable, lvr, borrowingPower, state)
@@ -202,68 +202,110 @@ const calculateFromPropertyAndFunds = (propertyValue, fundsAvailable, state) => 
   }
 }
 
-const calculateFromPropertyAndLVR = (propertyValue, lvr, state) => {
-  const loanAmount = propertyValue * (lvr / 100)
-  const depositAmount = propertyValue - loanAmount
-  const costs = calculateUpfrontCosts(propertyValue, loanAmount, {
+const calculateFromPropertyAndLVR = (propertyValue, lvr, state, borrowingPower = Infinity) => {
+  // Calculate theoretical amounts based on user inputs (no borrowing power limits)
+  const targetLoanAmount = propertyValue * (lvr / 100)
+  const depositAmount = propertyValue - targetLoanAmount
+  const costs = calculateUpfrontCosts(propertyValue, targetLoanAmount, {
     state,
     isFirstHomeBuyer: true,
     includeLMI: lvr > 80
   })
   const fundsAvailable = depositAmount + costs.total
   
+  // Check if borrowing power constraint affects the calculation
+  const borrowingPowerLimited = targetLoanAmount > borrowingPower
+  const borrowingPowerShortfall = borrowingPowerLimited ? targetLoanAmount - borrowingPower : 0
+  
   return {
     propertyValue: Math.round(propertyValue),
-    lvr: Math.round(lvr * 10) / 10,
-    loanAmount: Math.round(loanAmount),
+    lvr: Math.round(lvr * 10) / 10, // Show the target LVR user requested
+    targetLVR: Math.round(lvr * 10) / 10, // Original target LVR
+    loanAmount: Math.round(targetLoanAmount), // Show theoretical loan amount
     fundsAvailable: Math.round(fundsAvailable),
     depositAmount: Math.round(depositAmount),
     costs,
-    isValid: lvr >= 5 && lvr <= 95
+    isValid: lvr >= 5 && lvr <= 95, // Valid if LVR is in acceptable range
+    borrowingPowerLimited,
+    borrowingPowerShortfall: Math.round(borrowingPowerShortfall),
+    maxAffordableLoanAmount: Math.round(Math.min(targetLoanAmount, borrowingPower)) // What they can actually afford
   }
 }
 
 const calculateFromFundsAndLVR = (fundsAvailable, lvr, borrowingPower, state) => {
-  // Iterative approach to find accurate property value (replaces inaccurate 5% estimate)
+  // Iterative approach to find accurate property value with improved convergence
   let propertyValue = fundsAvailable * 5 // Better starting estimate based on typical cost ratios
   let iteration = 0
+  let previousPropertyValue = 0
+  let dampingFactor = 1.0
+  let convergenceFailure = false
   
-  while (iteration < 15) { // Increased iteration limit for better convergence
+  while (iteration < 15) {
     const loanAmount = Math.min(propertyValue * (lvr / 100), borrowingPower)
+    const actualLVR = (loanAmount / propertyValue) * 100
     const costs = calculateUpfrontCosts(propertyValue, loanAmount, {
       state,
       isFirstHomeBuyer: true,
-      includeLMI: lvr > 80
+      includeLMI: actualLVR > 80
     })
     
     const requiredFunds = (propertyValue - loanAmount) + costs.total
+    const difference = requiredFunds - fundsAvailable
     
-    if (Math.abs(requiredFunds - fundsAvailable) < 100) break // Tighter tolerance for accuracy
+    if (Math.abs(difference) < 100) break // Converged successfully
     
-    // Adjust property value proportionally
-    propertyValue = propertyValue * (fundsAvailable / requiredFunds)
+    // Check for oscillation and apply damping
+    if (iteration > 3 && Math.abs(propertyValue - previousPropertyValue) < 1000 && Math.abs(difference) > 1000) {
+      dampingFactor = Math.max(0.3, dampingFactor * 0.8) // Reduce damping factor
+    }
+    
+    previousPropertyValue = propertyValue
+    
+    // Adjust property value with damping to prevent oscillation
+    const adjustmentRatio = fundsAvailable / requiredFunds
+    propertyValue = propertyValue * (1 + (adjustmentRatio - 1) * dampingFactor)
+    
+    // Prevent unrealistic values
+    if (propertyValue < 50000 || propertyValue > 10000000) {
+      convergenceFailure = true
+      break
+    }
+    
     iteration++
   }
   
+  if (iteration >= 15) {
+    convergenceFailure = true
+    console.warn("Calculation failed to converge after 15 iterations - results may be inaccurate")
+  }
+  
   const finalLoanAmount = Math.min(propertyValue * (lvr / 100), borrowingPower)
+  const actualLVR = (finalLoanAmount / propertyValue) * 100
   const finalCosts = calculateUpfrontCosts(propertyValue, finalLoanAmount, {
     state,
     isFirstHomeBuyer: true,
-    includeLMI: lvr > 80
+    includeLMI: actualLVR > 80
   })
   
   const actualFundsNeeded = propertyValue - finalLoanAmount + finalCosts.total
   
+  // Check if borrowing power is limiting the calculation
+  const borrowingPowerLimited = propertyValue * (lvr / 100) > borrowingPower
+  
   return {
     propertyValue: Math.round(propertyValue),
     fundsAvailable: Math.round(fundsAvailable),
-    lvr: Math.round(lvr * 10) / 10,
+    lvr: Math.round(actualLVR * 10) / 10,
+    targetLVR: Math.round(lvr * 10) / 10,
     loanAmount: Math.round(finalLoanAmount),
     depositAmount: Math.round(propertyValue - finalLoanAmount),
     costs: finalCosts,
     actualFundsNeeded: Math.round(actualFundsNeeded),
-    isValid: actualFundsNeeded <= fundsAvailable && finalLoanAmount <= borrowingPower,
-    iterations: iteration // Debug info
+    isValid: actualFundsNeeded <= fundsAvailable * 1.05 && finalLoanAmount <= borrowingPower, // 5% tolerance
+    iterations: iteration,
+    convergenceFailure,
+    borrowingPowerLimited,
+    borrowingPowerShortfall: borrowingPowerLimited ? Math.round(propertyValue * (lvr / 100) - borrowingPower) : 0
   }
 }
 
@@ -310,66 +352,67 @@ const calculateFromLoanAndLVR = (loanAmount, lvr, state) => {
 }
 
 const calculateFromLoanAndFunds = (loanAmount, fundsAvailable, state) => {
-  // Better starting estimate based on typical cost ratios
-  let propertyValue = loanAmount * 1.25 // Start with 80% LVR estimate
-  let iteration = 0
-  let lastAdjustment = 0
-  let convergenceFailure = false
+  // FIXED CALCULATION: Total Available = Loan + Funds, Property Value = Total - Costs
+  const totalAvailable = loanAmount + fundsAvailable
   
-  while (iteration < 15) { // Increased iteration limit
+  // Start with estimate that accounts for LMI requirement
+  let propertyValue = totalAvailable * 0.92 // Conservative estimate accounting for LMI
+  let iteration = 0
+  
+  for (let i = 0; i < 10; i++) {
+    iteration = i + 1
+    const currentLVR = (loanAmount / propertyValue) * 100
+    
+    // Force LMI if loan amount would require >80% LVR on any realistic property value
+    const maxPropertyWithoutLMI = loanAmount / 0.80 // Property value at exactly 80% LVR
+    const mustHaveLMI = totalAvailable < maxPropertyWithoutLMI * 1.05 // Add 5% buffer for costs
+    
     const costs = calculateUpfrontCosts(propertyValue, loanAmount, {
       state,
-      isFirstHomeBuyer: true,
-      includeLMI: calculateLVR(loanAmount, propertyValue) > 80
+      isFirstHomeBuyer: false, // Use standard stamp duty to avoid circular logic
+      includeLMI: mustHaveLMI || currentLVR > 80
     })
     
-    const depositAmount = propertyValue - loanAmount
-    const totalFundsNeeded = depositAmount + costs.total
-    const difference = Math.abs(totalFundsNeeded - fundsAvailable)
+    // CORRECT FORMULA: Property Value = Total Available - Transaction Costs
+    const newPropertyValue = totalAvailable - costs.total
     
-    if (difference < 100) break // Tighter tolerance for better accuracy
-    
-    // Calculate adjustment with dampening to prevent oscillation
-    const rawAdjustment = fundsAvailable / totalFundsNeeded
-    const dampening = iteration > 5 ? 0.5 : 0.8 // Reduce adjustment magnitude after 5 iterations
-    const adjustment = 1 + (rawAdjustment - 1) * dampening
-    
-    // Detect oscillation (adjustment flipping back and forth)
-    if (iteration > 1 && Math.sign(adjustment - 1) !== Math.sign(lastAdjustment - 1)) {
-      // Use average of current and target to break oscillation
-      const targetPropertyValue = propertyValue * rawAdjustment
-      propertyValue = (propertyValue + targetPropertyValue) / 2
-    } else {
-      propertyValue = propertyValue * adjustment
+    // Check convergence (within $100)
+    if (Math.abs(newPropertyValue - propertyValue) < 100) {
+      propertyValue = newPropertyValue
+      break
     }
     
-    lastAdjustment = adjustment
-    iteration++
+    propertyValue = newPropertyValue
   }
   
-  // Check for convergence failure
-  if (iteration >= 15) {
-    convergenceFailure = true
-  }
-  
-  const lvr = (loanAmount / propertyValue) * 100
+  // Final calculations with converged property value
+  const finalLVR = (loanAmount / propertyValue) * 100
+  const finalDeposit = propertyValue - loanAmount
   const finalCosts = calculateUpfrontCosts(propertyValue, loanAmount, {
     state,
-    isFirstHomeBuyer: true,
-    includeLMI: lvr > 80
+    isFirstHomeBuyer: false, // Keep consistent with iteration calculation
+    includeLMI: finalLVR > 80
   })
   
-  return {
+  // Verification: Check if funds actually work out
+  const totalFundsNeeded = finalDeposit + finalCosts.total
+  const shortfall = totalFundsNeeded - fundsAvailable
+  
+  const finalResult = {
     loanAmount: Math.round(loanAmount),
     fundsAvailable: Math.round(fundsAvailable),
     propertyValue: Math.round(propertyValue),
-    lvr: Math.round(lvr * 10) / 10,
-    depositAmount: Math.round(propertyValue - loanAmount),
+    lvr: Math.round(finalLVR * 10) / 10,
+    depositAmount: Math.round(finalDeposit),
     costs: finalCosts,
-    isValid: lvr >= 5 && lvr <= 95 && !convergenceFailure,
-    iterations: iteration, // Debug info
-    convergenceFailure
+    totalFundsNeeded: Math.round(totalFundsNeeded),
+    shortfall: Math.round(shortfall),
+    isValid: finalLVR >= 5 && finalLVR <= 95 && Math.abs(shortfall) < 1000,
+    iterations: iteration,
+    convergenceFailure: iteration >= 10
   }
+  
+  return finalResult
 }
 
 // Enhanced validation system with constraint override detection
@@ -933,6 +976,38 @@ const calculateNSWStampDutyStandard = (value) => {
   return 43087.50 + (value - 1064000) * 0.055
 }
 
+// Mortgage registration fees by state (2025)
+export const calculateMortgageRegistrationFee = (state = 'NSW') => {
+  const mortgageRegistrationFees = {
+    'NSW': 175.70,  // Includes Torrens Assurance Fund levy
+    'VIC': 128.50,
+    'QLD': 224.32,
+    'WA': 174.70,
+    'SA': 187.00,
+    'TAS': 152.19,
+    'ACT': 166.00,
+    'NT': 165.00
+  }
+  
+  return Math.round(mortgageRegistrationFees[state] || mortgageRegistrationFees['NSW'])
+}
+
+// Transfer fees by state (2025) - Land Titles Office fees
+export const calculateTransferFee = (state = 'NSW') => {
+  const transferFees = {
+    'NSW': 175.70,  // Standard transfer fee including Torrens Assurance Fund levy
+    'VIC': 128.50,  // Estimated based on standard transfer
+    'QLD': 192.00,  // Standard transfer lodgement fee
+    'WA': 174.70,   // Standard transfer fee
+    'SA': 170.00,   // LTO lodgement fee
+    'TAS': 135.00,  // Standard transfer fee
+    'ACT': 153.00,  // Land titles office fee
+    'NT': 149.00    // Standard transfer fee
+  }
+  
+  return Math.round(transferFees[state] || transferFees['NSW'])
+}
+
 // Total upfront costs calculation
 export const calculateUpfrontCosts = (propertyValue, loanAmount, params = {}) => {
   const {
@@ -940,22 +1015,22 @@ export const calculateUpfrontCosts = (propertyValue, loanAmount, params = {}) =>
     isFirstHomeBuyer = false,
     includeLMI = true,
     legalFees = 1500,
-    inspectionFees = 500,
-    lenderFees = 600,
-    otherCosts = 500
+    inspectionFees = 500
   } = params
 
   const stampDuty = calculateStampDuty(propertyValue, state, isFirstHomeBuyer)
   const lmi = includeLMI ? calculateLMI(loanAmount, propertyValue) : 0
+  const mortgageRegistrationFee = calculateMortgageRegistrationFee(state)
+  const transferFee = calculateTransferFee(state)
   
   const costs = {
     stampDuty: Math.round(stampDuty),
     lmi: Math.round(lmi),
     legalFees: Math.round(legalFees),
     inspectionFees: Math.round(inspectionFees),
-    lenderFees: Math.round(lenderFees),
-    otherCosts: Math.round(otherCosts),
-    total: Math.round(stampDuty + lmi + legalFees + inspectionFees + lenderFees + otherCosts)
+    mortgageRegistrationFee: Math.round(mortgageRegistrationFee),
+    transferFee: Math.round(transferFee),
+    total: Math.round(stampDuty + lmi + legalFees + inspectionFees + mortgageRegistrationFee + transferFee)
   }
   
   return costs
@@ -968,13 +1043,11 @@ export const calculateMaxPurchasePrice = (maxLoan, deposit, params = {}) => {
     isFirstHomeBuyer = false,
     targetLVR = 80,
     legalFees = 1500,
-    inspectionFees = 500,
-    lenderFees = 600,
-    otherCosts = 500
+    inspectionFees = 500
   } = params
 
   const availableFunds = maxLoan + deposit
-  const fixedCosts = legalFees + inspectionFees + lenderFees + otherCosts
+  const fixedCosts = legalFees + inspectionFees
 
   // Iterative calculation to find maximum price accounting for stamp duty and LMI
   let maxPrice = availableFunds - fixedCosts
@@ -986,9 +1059,7 @@ export const calculateMaxPurchasePrice = (maxLoan, deposit, params = {}) => {
       isFirstHomeBuyer,
       includeLMI: calculateLVR(maxLoan, maxPrice) > 80,
       legalFees,
-      inspectionFees,
-      lenderFees,
-      otherCosts
+      inspectionFees
     })
     
     const requiredFunds = costs.total + (maxPrice - maxLoan)
@@ -1004,9 +1075,7 @@ export const calculateMaxPurchasePrice = (maxLoan, deposit, params = {}) => {
     isFirstHomeBuyer,
     includeLMI: calculateLVR(maxLoan, maxPrice) > 80,
     legalFees,
-    inspectionFees,
-    lenderFees,
-    otherCosts
+    inspectionFees
   })
 
   return {
