@@ -12,6 +12,7 @@ import {
   CheckCircle,
   PiggyBank
 } from 'lucide-react'
+import packageJson from '../../../../package.json'
 import { useStepData, useToolkit } from '../ToolkitContext'
 import SmartCalculatorDemo from '../Components/SmartCalculatorDemo'
 import { 
@@ -32,6 +33,7 @@ const MaxPurchasePriceCalculator = () => {
   
   const [errors, setErrors] = useState({})
   const [results, setResults] = useState(null)
+  const [smartCalculatorScenarios, setSmartCalculatorScenarios] = useState(null)
 
   // Get borrowing power from Step 1
   const borrowingPower = state.borrowingPower.maxLoan || 0
@@ -173,8 +175,8 @@ const MaxPurchasePriceCalculator = () => {
   }, [])
 
   const handleNext = () => {
-    if (!results) {
-      setErrors({ general: 'Please complete the calculation before proceeding' })
+    if (!smartCalculatorScenarios) {
+      setErrors({ general: 'Please complete the Smart Calculator before proceeding' })
       return
     }
 
@@ -221,6 +223,7 @@ const MaxPurchasePriceCalculator = () => {
           <SmartCalculatorDemo 
             borrowingPower={borrowingPower} 
             initialState={formData.state}
+            onScenariosCalculated={setSmartCalculatorScenarios}
           />
         </motion.div>
 
@@ -230,16 +233,33 @@ const MaxPurchasePriceCalculator = () => {
           animate={{ opacity: 1, x: 0 }}
           className="space-y-6"
         >
-          {results ? (
+          {/* Display scenarios from Smart Calculator */}
+          {smartCalculatorScenarios ? (
             <>
+              {/* Header */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-6 mb-6">
+                <h3 className="text-xl font-bold text-gray-900 mb-2">Property Purchase Analysis</h3>
+                <p className="text-gray-600">Based on your Smart Calculator inputs and borrowing capacity</p>
+                <div className="mt-3 grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-600">Available Funds:</span>
+                    <div className="font-medium text-green-600">{formatCurrency(smartCalculatorScenarios.availableFunds)}</div>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Borrowing Power:</span>
+                    <div className="font-medium text-blue-600">{formatCurrency(smartCalculatorScenarios.borrowingPower)}</div>
+                  </div>
+                </div>
+              </div>
+
               {/* Main Results - Key Scenarios */}
               <div className="grid grid-cols-1 gap-4">
                 {/* Home Guarantee Scheme - First Home Buyers Only */}
-                {results.homeGuarantee && results.isFirstHomeBuyer && (
+                {smartCalculatorScenarios.homeGuarantee && smartCalculatorScenarios.isFirstHomeBuyer && (
                   <div className="bg-gradient-to-br from-blue-50 to-cyan-100 rounded-2xl p-6 shadow-xl border-2 border-blue-300">
                     <div className="flex items-start justify-between mb-4">
                       <div>
-                        <h3 className="text-lg font-bold text-blue-900">Home Guarantee Scheme</h3>
+                        <h3 className="text-lg font-bold text-blue-900">🏛️ Home Guarantee Scheme</h3>
                         <p className="text-sm text-blue-700">5% deposit • 95% LVR • No LMI Required</p>
                       </div>
                       <div className="flex flex-col items-end space-y-1">
@@ -247,21 +267,35 @@ const MaxPurchasePriceCalculator = () => {
                           Government Backed
                         </span>
                         <span className="text-xs text-blue-600 font-medium">
-                          Cap: {formatCurrency(results.homeGuaranteeCap)}
+                          Cap: {formatCurrency(smartCalculatorScenarios.homeGuaranteeCap)}
                         </span>
                       </div>
                     </div>
                     <div className="text-3xl font-bold text-blue-600 mb-3">
-                      {formatCurrency(results.homeGuarantee.maxPrice)}
+                      {formatCurrency(smartCalculatorScenarios.homeGuarantee.maxPrice)}
                     </div>
                     <div className="grid grid-cols-2 gap-3 text-sm">
                       <div>
                         <span className="text-gray-600">Loan Amount:</span>
-                        <div className="font-medium">{formatCurrency(results.homeGuarantee.loanAmount)}</div>
+                        <div className="font-medium">{formatCurrency(smartCalculatorScenarios.homeGuarantee.loanAmount)}</div>
                       </div>
                       <div>
-                        <span className="text-gray-600">Cash Needed:</span>
-                        <div className="font-medium">{formatCurrency(results.homeGuarantee.cashRequired)}</div>
+                        <span className="text-gray-600">Total Cash Required:</span>
+                        <div className="font-medium">{formatCurrency(smartCalculatorScenarios.homeGuarantee.cashRequired)}</div>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                      <div className="bg-blue-100 rounded p-2">
+                        <span className="text-blue-600">Deposit:</span>
+                        <div className="font-medium">{formatCurrency(smartCalculatorScenarios.homeGuarantee.maxPrice - smartCalculatorScenarios.homeGuarantee.loanAmount)}</div>
+                      </div>
+                      <div className="bg-blue-100 rounded p-2">
+                        <span className="text-blue-600">Stamp Duty:</span>
+                        <div className="font-medium">{formatCurrency(smartCalculatorScenarios.homeGuarantee.costs.stampDuty)}</div>
+                      </div>
+                      <div className="bg-blue-100 rounded p-2">
+                        <span className="text-blue-600">Other Costs:</span>
+                        <div className="font-medium">{formatCurrency(smartCalculatorScenarios.homeGuarantee.costs.total - smartCalculatorScenarios.homeGuarantee.costs.stampDuty)}</div>
                       </div>
                     </div>
                     <div className="mt-3 p-2 bg-blue-100 rounded-lg">
@@ -271,59 +305,96 @@ const MaxPurchasePriceCalculator = () => {
                     </div>
                   </div>
                 )}
-                {/* Without LMI - Conservative */}
+                
+                {/* Conservative Scenario */}
                 <div className="bg-gradient-to-br from-green-50 to-emerald-100 rounded-2xl p-6 shadow-xl border-2 border-green-200">
                   <div className="flex items-start justify-between mb-4">
                     <div>
-                      <h3 className="text-lg font-bold text-green-900">Conservative Purchase Price</h3>
-                      <p className="text-sm text-green-700">Up to 80% LVR • No LMI Required</p>
+                      <h3 className="text-lg font-bold text-green-900">🛡️ Conservative Purchase</h3>
+                      <p className="text-sm text-green-700">≤80% LVR • No LMI Required • Lower Risk</p>
                     </div>
                     <span className="px-3 py-1 bg-green-600 text-white text-xs font-medium rounded-full">
-                      No LMI
+                      Recommended
                     </span>
                   </div>
                   <div className="text-3xl font-bold text-green-600 mb-3">
-                    {formatCurrency(results.withoutLMI.maxPrice)}
+                    {formatCurrency(smartCalculatorScenarios.conservative.maxPrice)}
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
                       <span className="text-gray-600">Loan Amount:</span>
-                      <div className="font-medium">{formatCurrency(results.withoutLMI.loanAmount)}</div>
+                      <div className="font-medium">{formatCurrency(smartCalculatorScenarios.conservative.loanAmount)}</div>
                     </div>
                     <div>
-                      <span className="text-gray-600">Cash Needed:</span>
-                      <div className="font-medium">{formatCurrency(results.withoutLMI.cashRequired)}</div>
+                      <span className="text-gray-600">Total Cash Required:</span>
+                      <div className="font-medium">{formatCurrency(smartCalculatorScenarios.conservative.cashRequired)}</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                    <div className="bg-green-100 rounded p-2">
+                      <span className="text-green-600">Deposit:</span>
+                      <div className="font-medium">{formatCurrency(smartCalculatorScenarios.conservative.maxPrice - smartCalculatorScenarios.conservative.loanAmount)}</div>
+                    </div>
+                    <div className="bg-green-100 rounded p-2">
+                      <span className="text-green-600">Stamp Duty:</span>
+                      <div className="font-medium">{formatCurrency(smartCalculatorScenarios.conservative.costs.stampDuty)}</div>
+                    </div>
+                    <div className="bg-green-100 rounded p-2">
+                      <span className="text-green-600">Other Costs:</span>
+                      <div className="font-medium">{formatCurrency(smartCalculatorScenarios.conservative.costs.total - smartCalculatorScenarios.conservative.costs.stampDuty)}</div>
                     </div>
                   </div>
                 </div>
 
-                {/* With LMI - Maximum */}
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-100 rounded-2xl p-6 shadow-xl border-2 border-blue-200">
+                {/* Maximum Scenario */}
+                <div className="bg-gradient-to-br from-orange-50 to-yellow-100 rounded-2xl p-6 shadow-xl border-2 border-orange-200">
                   <div className="flex items-start justify-between mb-4">
                     <div>
-                      <h3 className="text-lg font-bold text-blue-900">Maximum Purchase Price</h3>
-                      <p className="text-sm text-blue-700">Up to 95% LVR • LMI May Apply</p>
+                      <h3 className="text-lg font-bold text-orange-900">🚀 Maximum Purchase</h3>
+                      <p className="text-sm text-orange-700">≤95% LVR • LMI Required • Higher Reach</p>
                     </div>
-                    <span className="px-3 py-1 bg-yellow-500 text-white text-xs font-medium rounded-full">
-                      +{formatCurrency(results.withLMI.costs.lmi)} LMI
+                    <span className="px-3 py-1 bg-orange-500 text-white text-xs font-medium rounded-full">
+                      +{formatCurrency(smartCalculatorScenarios.maximum.costs.lmi)} LMI
                     </span>
                   </div>
-                  <div className="text-3xl font-bold text-blue-600 mb-3">
-                    {formatCurrency(results.withLMI.maxPrice)}
+                  <div className="text-3xl font-bold text-orange-600 mb-3">
+                    {formatCurrency(smartCalculatorScenarios.maximum.maxPrice)}
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
                       <span className="text-gray-600">Loan Amount:</span>
-                      <div className="font-medium">{formatCurrency(results.withLMI.loanAmount)}</div>
+                      <div className="font-medium">{formatCurrency(smartCalculatorScenarios.maximum.loanAmount)}</div>
                     </div>
                     <div>
-                      <span className="text-gray-600">Cash Needed:</span>
-                      <div className="font-medium">{formatCurrency(results.withLMI.cashRequired)}</div>
+                      <span className="text-gray-600">Total Cash Required:</span>
+                      <div className="font-medium">{formatCurrency(smartCalculatorScenarios.maximum.cashRequired)}</div>
                     </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-4 gap-2 text-xs">
+                    <div className="bg-orange-100 rounded p-2">
+                      <span className="text-orange-600">Deposit:</span>
+                      <div className="font-medium">{formatCurrency(smartCalculatorScenarios.maximum.maxPrice - smartCalculatorScenarios.maximum.loanAmount)}</div>
+                    </div>
+                    <div className="bg-orange-100 rounded p-2">
+                      <span className="text-orange-600">Stamp Duty:</span>
+                      <div className="font-medium">{formatCurrency(smartCalculatorScenarios.maximum.costs.stampDuty)}</div>
+                    </div>
+                    <div className="bg-red-100 rounded p-2">
+                      <span className="text-red-600">LMI:</span>
+                      <div className="font-medium">{formatCurrency(smartCalculatorScenarios.maximum.costs.lmi)}</div>
+                    </div>
+                    <div className="bg-orange-100 rounded p-2">
+                      <span className="text-orange-600">Other:</span>
+                      <div className="font-medium">{formatCurrency(smartCalculatorScenarios.maximum.costs.total - smartCalculatorScenarios.maximum.costs.stampDuty - smartCalculatorScenarios.maximum.costs.lmi)}</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 p-2 bg-orange-100 rounded-lg">
+                    <p className="text-xs text-orange-800">
+                      ⚠️ Higher monthly payments due to LMI • Limited lender options at high LVR
+                    </p>
                   </div>
                 </div>
               </div>
-
             </>
           ) : (
             <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-8 shadow-xl border border-white/20 text-center">
@@ -331,10 +402,10 @@ const MaxPurchasePriceCalculator = () => {
                 <Home className="h-6 w-6 text-gray-400" />
               </div>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                Ready to Calculate
+                Smart Calculator Ready
               </h3>
               <p className="text-gray-600">
-                Enter your deposit and location to see your maximum purchase price
+                Use the Smart Calculator to set your property parameters and see purchase scenarios
               </p>
             </div>
           )}
@@ -348,7 +419,7 @@ const MaxPurchasePriceCalculator = () => {
               Back: Borrowing Power
             </button>
             
-            {results && (
+            {smartCalculatorScenarios && (
               <motion.button
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -381,6 +452,14 @@ const MaxPurchasePriceCalculator = () => {
               <p>• Keep some cash aside for post-settlement expenses and emergencies</p>
               <p>• {formData.isFirstHomeBuyer ? 'Take advantage of first home buyer grants and concessions' : 'Consider if you might be eligible for first home buyer benefits'}</p>
             </div>
+          </div>
+        </div>
+        
+        {/* Version Display */}
+        <div className="mt-8 pt-6 border-t border-gray-200">
+          <div className="flex justify-between items-center text-xs text-gray-400">
+            <span>Otium First Home Buyer Toolkit</span>
+            <span>v{packageJson.version}</span>
           </div>
         </div>
       </motion.div>
