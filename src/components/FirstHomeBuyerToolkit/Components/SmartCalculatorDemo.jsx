@@ -272,43 +272,161 @@ const SmartCalculatorDemo = ({ borrowingPower = 600000, initialState = 'NSW', on
     
     let homeGuaranteeScenario = null
     if (isFirstHomeBuyer) {
-      const homeGuaranteeMaxPrice = calculateHomeGuaranteeMaxPrice(
+      // Get HGS price cap for the state
+      const stateCap = HOME_GUARANTEE_SCHEME_CAPS[state]?.capital || Infinity
+      
+      // HGS should work exactly like LOAN_FUNDS scenario but without LMI
+      // Use the same calculation approach as the Smart Calculator
+      const loanFundsInputs = {
+        loanAmount: borrowingPower,
+        fundsAvailable: availableFunds
+      }
+      
+      // Calculate using LOAN_FUNDS approach to get correct property value
+      const loanFundsResult = smartAutoCalculate(
+        loanFundsInputs, 
+        ['loanAmount', 'fundsAvailable'], 
         borrowingPower, 
-        effectiveDeposit, 
         state, 
-        'capital'
+        isFirstHomeBuyer
       )
       
-      if (homeGuaranteeMaxPrice > 0) {
-        homeGuaranteeScenario = calculateMaxPurchasePrice(
-          Math.min(borrowingPower, homeGuaranteeMaxPrice * 0.95),
-          effectiveDeposit,
-          { ...params, includeLMI: false, targetLVR: 95 }
-        )
-        homeGuaranteeScenario.maxPrice = Math.min(homeGuaranteeScenario.maxPrice, homeGuaranteeMaxPrice)
-        homeGuaranteeScenario.loanAmount = Math.min(homeGuaranteeScenario.loanAmount, homeGuaranteeMaxPrice * 0.95)
-        homeGuaranteeScenario.scenario = 'homeGuarantee'
-        homeGuaranteeScenario.description = 'Home Guarantee Scheme (5% deposit, no LMI)'
+      // Check if this qualifies for HGS (>80% LVR and within price cap)
+      if (loanFundsResult.isValid && loanFundsResult.lvr > 80 && loanFundsResult.propertyValue <= stateCap) {
+        // HGS benefit: LMI savings can be reinvested into higher property value
+        // Calculate optimal property value: borrowingPower + availableFunds - transactionCosts
+        const optimalPropertyValue = borrowingPower + availableFunds
+        
+        // Calculate costs at this optimal level (without LMI)
+        const hgsCosts = calculateUpfrontCosts(optimalPropertyValue, borrowingPower, {
+          state,
+          isFirstHomeBuyer,
+          includeLMI: false, // HGS benefit - no LMI
+          legalFees: params.legalFees,
+          inspectionFees: params.inspectionFees
+        })
+        
+        // Adjust property value to exactly match available funds
+        const adjustedPropertyValue = borrowingPower + availableFunds - hgsCosts.total
+        const adjustedLVR = (borrowingPower / adjustedPropertyValue) * 100
+        
+        // Recalculate costs at adjusted property value for accuracy
+        const finalCosts = calculateUpfrontCosts(adjustedPropertyValue, borrowingPower, {
+          state,
+          isFirstHomeBuyer,
+          includeLMI: false,
+          legalFees: params.legalFees,
+          inspectionFees: params.inspectionFees
+        })
+        
+        homeGuaranteeScenario = {
+          maxPrice: Math.round(adjustedPropertyValue),
+          loanAmount: borrowingPower,
+          costs: finalCosts,
+          depositRequired: Math.round(adjustedPropertyValue - borrowingPower),
+          cashRequired: Math.round((adjustedPropertyValue - borrowingPower) + finalCosts.total),
+          lvr: Math.round(adjustedLVR * 10) / 10,
+          scenario: 'homeGuarantee',
+          description: `Home Guarantee Scheme (${Math.round(adjustedLVR * 10) / 10}% LVR, up to 95% no LMI)`
+        }
       }
     }
 
-    // Conservative scenario - 80% LVR, no LMI
-    const conservativeScenario = calculateMaxPurchasePrice(
-      Math.min(borrowingPower, effectiveDeposit * 4), // 80% LVR cap
-      effectiveDeposit,
-      { ...params, includeLMI: false, targetLVR: 80 }
-    )
-    conservativeScenario.scenario = 'conservative'
-    conservativeScenario.description = 'Conservative (≤80% LVR, no LMI)'
+    // Conservative scenario - MUST stay exactly at 80% LVR (no LMI)
+    // May require reducing loan amount below maximum borrowing power to fit within funds
+    let consPropertyValue = 0
+    let consLoanAmount = borrowingPower
+    
+    // Try reducing loan amount until we find a solution that fits within funds at exactly 80% LVR
+    for (let loanAmount = borrowingPower; loanAmount >= 300000; loanAmount -= 1000) {
+      // At exactly 80% LVR, property value = loan amount / 0.8
+      const propertyValue = loanAmount / 0.8
+      
+      // Calculate costs for this scenario
+      const costs = calculateUpfrontCosts(propertyValue, loanAmount, {
+        state,
+        isFirstHomeBuyer,
+        includeLMI: false, // Conservative = no LMI at 80% LVR
+        legalFees: params.legalFees,
+        inspectionFees: params.inspectionFees
+      })
+      
+      const deposit = propertyValue - loanAmount
+      const totalCashRequired = deposit + costs.total
+      
+      // Check if this fits our funds constraint
+      if (totalCashRequired <= availableFunds) {
+        consPropertyValue = propertyValue
+        consLoanAmount = loanAmount
+        break // Found the optimal solution (highest loan amount that works at 80% LVR)
+      }
+    }
+    
+    const consFinalCosts = calculateUpfrontCosts(consPropertyValue, consLoanAmount, {
+      state,
+      isFirstHomeBuyer,
+      includeLMI: false,
+      legalFees: params.legalFees,
+      inspectionFees: params.inspectionFees
+    })
+    
+    const conservativeScenario = {
+      maxPrice: Math.round(consPropertyValue),
+      loanAmount: consLoanAmount,
+      costs: consFinalCosts,
+      depositRequired: Math.round(consPropertyValue - consLoanAmount),
+      cashRequired: Math.round((consPropertyValue - consLoanAmount) + consFinalCosts.total),
+      lvr: Math.round((consLoanAmount / consPropertyValue) * 100 * 10) / 10,
+      scenario: 'conservative',
+      description: `Conservative (${Math.round((consLoanAmount / consPropertyValue) * 100 * 10) / 10}% LVR, no LMI)`
+    }
 
-    // Maximum scenario - 95% LVR, with LMI
-    const maximumScenario = calculateMaxPurchasePrice(
-      Math.min(borrowingPower, effectiveDeposit * 19), // 95% LVR cap
-      effectiveDeposit,
-      { ...params, includeLMI: true, targetLVR: 95 }
-    )
-    maximumScenario.scenario = 'maximum'
-    maximumScenario.description = 'Maximum (≤95% LVR, with LMI)'
+    // Maximum scenario - follows same logic as HGS but includes LMI costs
+    let maximumScenario
+    
+    // Calculate optimal property value with LMI included (iterative approach)
+    let maxPropertyValue = borrowingPower + availableFunds
+    let maxIteration = 0
+    
+    while (maxIteration < 5) {
+      const maxCosts = calculateUpfrontCosts(maxPropertyValue, borrowingPower, {
+        state,
+        isFirstHomeBuyer,
+        includeLMI: true, // Include LMI for maximum scenario
+        legalFees: params.legalFees,
+        inspectionFees: params.inspectionFees
+      })
+      
+      const adjustedMaxValue = borrowingPower + availableFunds - maxCosts.total
+      const difference = Math.abs(adjustedMaxValue - maxPropertyValue)
+      
+      if (difference < 100) break // Converged
+      
+      maxPropertyValue = adjustedMaxValue
+      maxIteration++
+    }
+    
+    const maxLVR = (borrowingPower / maxPropertyValue) * 100
+    
+    // Create maximum scenario with final values
+    const maxFinalCosts = calculateUpfrontCosts(maxPropertyValue, borrowingPower, {
+      state,
+      isFirstHomeBuyer,
+      includeLMI: true,
+      legalFees: params.legalFees,
+      inspectionFees: params.inspectionFees
+    })
+    
+    maximumScenario = {
+      maxPrice: Math.round(maxPropertyValue),
+      loanAmount: borrowingPower,
+      costs: maxFinalCosts,
+      depositRequired: Math.round(maxPropertyValue - borrowingPower),
+      cashRequired: Math.round((maxPropertyValue - borrowingPower) + maxFinalCosts.total),
+      lvr: Math.round(maxLVR * 10) / 10,
+      scenario: 'maximum',
+      description: `Maximum (${Math.round(maxLVR * 10) / 10}% LVR, with LMI)`
+    }
 
     return {
       availableFunds: availableFunds,
@@ -328,9 +446,19 @@ const SmartCalculatorDemo = ({ borrowingPower = 600000, initialState = 'NSW', on
           <Calculator className="h-5 w-5 text-blue-600" />
           Smart Property Calculator
         </h3>
+        
+        {/* Usage Tip - Moved to top for better visibility */}
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <p className="text-sm text-blue-900">
+            💡 <strong>How to use:</strong> Toggle the switches to lock/unlock fields. Locked fields are your inputs, unlocked fields get auto-calculated.
+            <br />
+            <span className="font-bold text-blue-800">Need at least 2 locked fields</span> to see calculations.
+          </p>
+        </div>
+        
         <div className="space-y-2">
           <p className="text-sm text-gray-600">
-            Lock/unlock fields to auto-calculate the others. Strategy: <span className="font-medium text-blue-600">{results?.strategy || 'None'}</span>
+            Current strategy: <span className="font-medium text-blue-600">{results?.strategy || 'None'}</span>
           </p>
           <div className="flex flex-wrap gap-2 text-xs">
             <span className="text-gray-500">Locked fields ({lockedFields.length}/4):</span>
@@ -341,6 +469,9 @@ const SmartCalculatorDemo = ({ borrowingPower = 600000, initialState = 'NSW', on
             ))}
             {lockedFields.length === 0 && (
               <span className="text-red-500">No fields locked - click toggles to set inputs</span>
+            )}
+            {lockedFields.length === 1 && (
+              <span className="text-amber-600 font-medium">Need 1 more locked field to calculate</span>
             )}
             {lockedFields.length === 4 && (
               <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full">
@@ -738,10 +869,6 @@ const SmartCalculatorDemo = ({ borrowingPower = 600000, initialState = 'NSW', on
 
         </div>
       )}
-
-      <div className="mt-4 text-xs text-gray-500">
-        <p>💡 <strong>Tip:</strong> Lock the fields you know, unlock the ones you want calculated. Need at least 2 locked fields.</p>
-      </div>
     </div>
   )
 }
