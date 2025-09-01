@@ -9,7 +9,8 @@ import {
   Gift,
   MapPin,
   Calculator,
-  TrendingUp
+  TrendingUp,
+  Home
 } from 'lucide-react'
 import { 
   smartAutoCalculate, 
@@ -177,7 +178,7 @@ const SmartCalculatorDemo = ({ borrowingPower = 600000, initialState = 'NSW', on
         }
       } else if (lockedFields.length >= 2) {
         // Normal smart calculation with 2-3 inputs
-        calculation = smartAutoCalculate(values, lockedFields, borrowingPower, state)
+        calculation = smartAutoCalculate(values, lockedFields, borrowingPower, state, isFirstHomeBuyer)
         
         // Add stamp duty and LMI calculations
         if (calculation?.propertyValue && calculation?.loanAmount) {

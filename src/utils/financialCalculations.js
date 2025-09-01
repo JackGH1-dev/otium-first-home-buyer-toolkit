@@ -78,7 +78,7 @@ export const calculateHomeGuaranteeMaxPrice = (borrowingPower, deposit, state, a
 }
 
 // Smart Auto-Calculation System for Property Purchase
-export const smartAutoCalculate = (inputs, lockedFields, borrowingPower, state = 'NSW') => {
+export const smartAutoCalculate = (inputs, lockedFields, borrowingPower, state = 'NSW', isFirstHomeBuyer = false) => {
   const { propertyValue, fundsAvailable, lvr, loanAmount } = inputs
   
   // Determine calculation strategy based on locked fields
@@ -88,22 +88,22 @@ export const smartAutoCalculate = (inputs, lockedFields, borrowingPower, state =
   
   switch (strategy) {
     case 'PROPERTY_FUNDS':
-      result = calculateFromPropertyAndFunds(propertyValue, fundsAvailable, state)
+      result = calculateFromPropertyAndFunds(propertyValue, fundsAvailable, state, isFirstHomeBuyer)
       break
     case 'PROPERTY_LVR':
-      result = calculateFromPropertyAndLVR(propertyValue, lvr, state, borrowingPower)
+      result = calculateFromPropertyAndLVR(propertyValue, lvr, state, borrowingPower, isFirstHomeBuyer)
       break
     case 'FUNDS_LVR':
-      result = calculateFromFundsAndLVR(fundsAvailable, lvr, borrowingPower, state)
+      result = calculateFromFundsAndLVR(fundsAvailable, lvr, borrowingPower, state, isFirstHomeBuyer)
       break
     case 'LOAN_PROPERTY':
-      result = calculateFromLoanAndProperty(loanAmount, propertyValue, state)
+      result = calculateFromLoanAndProperty(loanAmount, propertyValue, state, isFirstHomeBuyer)
       break
     case 'LOAN_LVR':
-      result = calculateFromLoanAndLVR(loanAmount, lvr, state)
+      result = calculateFromLoanAndLVR(loanAmount, lvr, state, isFirstHomeBuyer)
       break
     case 'LOAN_FUNDS':
-      result = calculateFromLoanAndFunds(loanAmount, fundsAvailable, state)
+      result = calculateFromLoanAndFunds(loanAmount, fundsAvailable, state, isFirstHomeBuyer)
       break
     default:
       result = { error: 'Invalid input combination', strategy: 'INVALID' }
@@ -162,11 +162,11 @@ const determineCalculationStrategy = (lockedFields) => {
 }
 
 // Calculation implementations
-const calculateFromPropertyAndFunds = (propertyValue, fundsAvailable, state) => {
+const calculateFromPropertyAndFunds = (propertyValue, fundsAvailable, state, isFirstHomeBuyer = false) => {
   // Initial estimation with 80% LVR assumption
   let initialCosts = calculateUpfrontCosts(propertyValue, propertyValue * 0.8, {
     state,
-    isFirstHomeBuyer: true,
+    isFirstHomeBuyer,
     includeLMI: false
   })
   
@@ -178,7 +178,7 @@ const calculateFromPropertyAndFunds = (propertyValue, fundsAvailable, state) => 
   if (Math.abs(lvr - 80) > 1) { // If LVR differs significantly from 80%
     const actualCosts = calculateUpfrontCosts(propertyValue, loanAmount, {
       state,
-      isFirstHomeBuyer: true,
+      isFirstHomeBuyer,
       includeLMI: lvr > 80
     })
     
@@ -202,13 +202,13 @@ const calculateFromPropertyAndFunds = (propertyValue, fundsAvailable, state) => 
   }
 }
 
-const calculateFromPropertyAndLVR = (propertyValue, lvr, state, borrowingPower = Infinity) => {
+const calculateFromPropertyAndLVR = (propertyValue, lvr, state, borrowingPower = Infinity, isFirstHomeBuyer = false) => {
   // Calculate theoretical amounts based on user inputs (no borrowing power limits)
   const targetLoanAmount = propertyValue * (lvr / 100)
   const depositAmount = propertyValue - targetLoanAmount
   const costs = calculateUpfrontCosts(propertyValue, targetLoanAmount, {
     state,
-    isFirstHomeBuyer: true,
+    isFirstHomeBuyer,
     includeLMI: lvr > 80
   })
   const fundsAvailable = depositAmount + costs.total
@@ -232,7 +232,7 @@ const calculateFromPropertyAndLVR = (propertyValue, lvr, state, borrowingPower =
   }
 }
 
-const calculateFromFundsAndLVR = (fundsAvailable, lvr, borrowingPower, state) => {
+const calculateFromFundsAndLVR = (fundsAvailable, lvr, borrowingPower, state, isFirstHomeBuyer = false) => {
   // Iterative approach to find accurate property value with improved convergence
   let propertyValue = fundsAvailable * 5 // Better starting estimate based on typical cost ratios
   let iteration = 0
@@ -245,7 +245,7 @@ const calculateFromFundsAndLVR = (fundsAvailable, lvr, borrowingPower, state) =>
     const actualLVR = (loanAmount / propertyValue) * 100
     const costs = calculateUpfrontCosts(propertyValue, loanAmount, {
       state,
-      isFirstHomeBuyer: true,
+      isFirstHomeBuyer,
       includeLMI: actualLVR > 80
     })
     
@@ -283,7 +283,7 @@ const calculateFromFundsAndLVR = (fundsAvailable, lvr, borrowingPower, state) =>
   const actualLVR = (finalLoanAmount / propertyValue) * 100
   const finalCosts = calculateUpfrontCosts(propertyValue, finalLoanAmount, {
     state,
-    isFirstHomeBuyer: true,
+    isFirstHomeBuyer,
     includeLMI: actualLVR > 80
   })
   
@@ -309,12 +309,12 @@ const calculateFromFundsAndLVR = (fundsAvailable, lvr, borrowingPower, state) =>
   }
 }
 
-const calculateFromLoanAndProperty = (loanAmount, propertyValue, state) => {
+const calculateFromLoanAndProperty = (loanAmount, propertyValue, state, isFirstHomeBuyer = false) => {
   const lvr = (loanAmount / propertyValue) * 100
   const depositAmount = propertyValue - loanAmount
   const costs = calculateUpfrontCosts(propertyValue, loanAmount, {
     state,
-    isFirstHomeBuyer: true,
+    isFirstHomeBuyer,
     includeLMI: lvr > 80
   })
   const fundsAvailable = depositAmount + costs.total
@@ -330,12 +330,12 @@ const calculateFromLoanAndProperty = (loanAmount, propertyValue, state) => {
   }
 }
 
-const calculateFromLoanAndLVR = (loanAmount, lvr, state) => {
+const calculateFromLoanAndLVR = (loanAmount, lvr, state, isFirstHomeBuyer = false) => {
   const propertyValue = loanAmount / (lvr / 100)
   const depositAmount = propertyValue - loanAmount
   const costs = calculateUpfrontCosts(propertyValue, loanAmount, {
     state,
-    isFirstHomeBuyer: true,
+    isFirstHomeBuyer,
     includeLMI: lvr > 80
   })
   const fundsAvailable = depositAmount + costs.total
@@ -351,7 +351,7 @@ const calculateFromLoanAndLVR = (loanAmount, lvr, state) => {
   }
 }
 
-const calculateFromLoanAndFunds = (loanAmount, fundsAvailable, state) => {
+const calculateFromLoanAndFunds = (loanAmount, fundsAvailable, state, isFirstHomeBuyer = false) => {
   // FIXED CALCULATION: Total Available = Loan + Funds, Property Value = Total - Costs
   const totalAvailable = loanAmount + fundsAvailable
   
@@ -369,7 +369,7 @@ const calculateFromLoanAndFunds = (loanAmount, fundsAvailable, state) => {
     
     const costs = calculateUpfrontCosts(propertyValue, loanAmount, {
       state,
-      isFirstHomeBuyer: false, // Use standard stamp duty to avoid circular logic
+      isFirstHomeBuyer,
       includeLMI: mustHaveLMI || currentLVR > 80
     })
     
@@ -390,7 +390,7 @@ const calculateFromLoanAndFunds = (loanAmount, fundsAvailable, state) => {
   const finalDeposit = propertyValue - loanAmount
   const finalCosts = calculateUpfrontCosts(propertyValue, loanAmount, {
     state,
-    isFirstHomeBuyer: false, // Keep consistent with iteration calculation
+    isFirstHomeBuyer,
     includeLMI: finalLVR > 80
   })
   
@@ -946,21 +946,40 @@ const getLMIRate = (lvr) => {
 }
 
 // Stamp duty calculation (NSW as default, expandable)
+// Australian stamp duty calculation by state (2024-2025)
 export const calculateStampDuty = (propertyValue, state = 'NSW', isFirstHomeBuyer = false) => {
-  if (state === 'NSW') {
-    return calculateNSWStampDuty(propertyValue, isFirstHomeBuyer)
+  switch (state) {
+    case 'NSW':
+      return calculateNSWStampDuty(propertyValue, isFirstHomeBuyer)
+    case 'VIC':
+      return calculateVICStampDuty(propertyValue, isFirstHomeBuyer)
+    case 'QLD':
+      return calculateQLDStampDuty(propertyValue, isFirstHomeBuyer)
+    case 'WA':
+      return calculateWAStampDuty(propertyValue, isFirstHomeBuyer)
+    case 'SA':
+      return calculateSAStampDuty(propertyValue, isFirstHomeBuyer)
+    case 'TAS':
+      return calculateTASStampDuty(propertyValue, isFirstHomeBuyer)
+    case 'NT':
+      return calculateNTStampDuty(propertyValue, isFirstHomeBuyer)
+    case 'ACT':
+      return calculateACTStampDuty(propertyValue, isFirstHomeBuyer)
+    default:
+      return calculateNSWStampDuty(propertyValue, isFirstHomeBuyer)
   }
-  // Add other states as needed
-  return calculateNSWStampDuty(propertyValue, isFirstHomeBuyer)
 }
 
+// NSW Stamp Duty (2024-2025 rates)
 const calculateNSWStampDuty = (value, isFirstHomeBuyer) => {
-  // First Home Buyer exemptions/concessions
+  // First Home Buyer exemptions/concessions (updated 2024-2025)
   if (isFirstHomeBuyer) {
-    if (value <= 650000) return 0 // Full exemption
-    if (value <= 800000) {
-      // Concession applies
-      return Math.round(Math.max(0, calculateNSWStampDutyStandard(value) - (650000 - value) * 0.045))
+    if (value <= 800000) return 0 // Full exemption up to $800k
+    if (value <= 1000000) {
+      // Concessional rate for $800k-$1M
+      const standardDuty = calculateNSWStampDutyStandard(value)
+      const concession = (1000000 - value) / 200000 * standardDuty
+      return Math.round(Math.max(0, standardDuty - concession))
     }
   }
   
@@ -974,6 +993,141 @@ const calculateNSWStampDutyStandard = (value) => {
   if (value <= 319000) return 1372.50 + (value - 85000) * 0.035
   if (value <= 1064000) return 9562.50 + (value - 319000) * 0.045
   return 43087.50 + (value - 1064000) * 0.055
+}
+
+// QLD Stamp Duty (2024-2025 rates)
+const calculateQLDStampDuty = (value, isFirstHomeBuyer) => {
+  if (isFirstHomeBuyer) {
+    if (value <= 700000) return 0 // Full exemption up to $700k (from June 2024)
+    if (value <= 800000) {
+      // Concession for $700k-$800k
+      const standardDuty = calculateQLDStampDutyStandard(value)
+      const concession = (800000 - value) / 100000 * standardDuty
+      return Math.round(Math.max(0, standardDuty - concession))
+    }
+  }
+  return Math.round(calculateQLDStampDutyStandard(value))
+}
+
+const calculateQLDStampDutyStandard = (value) => {
+  if (value <= 5000) return 0
+  if (value <= 75000) return (value - 5000) * 0.015
+  if (value <= 540000) return 1050 + (value - 75000) * 0.035
+  if (value <= 1000000) return 17325 + (value - 540000) * 0.045
+  return 38025 + (value - 1000000) * 0.055
+}
+
+// VIC Stamp Duty (2024-2025 rates)
+const calculateVICStampDuty = (value, isFirstHomeBuyer) => {
+  if (isFirstHomeBuyer) {
+    if (value <= 600000) return 0 // Full exemption up to $600k
+    if (value <= 750000) {
+      // Concession for $600k-$750k
+      const standardDuty = calculateVICStampDutyStandard(value)
+      const concession = (750000 - value) / 150000 * standardDuty
+      return Math.round(Math.max(0, standardDuty - concession))
+    }
+  }
+  return Math.round(calculateVICStampDutyStandard(value))
+}
+
+const calculateVICStampDutyStandard = (value) => {
+  if (value <= 25000) return value * 0.014
+  if (value <= 130000) return 350 + (value - 25000) * 0.024
+  if (value <= 960000) return 2870 + (value - 130000) * 0.055
+  return 48520 + (value - 960000) * 0.065
+}
+
+// WA Stamp Duty (2024-2025 rates)
+const calculateWAStampDuty = (value, isFirstHomeBuyer) => {
+  if (isFirstHomeBuyer) {
+    if (value <= 450000) return 0 // Full exemption up to $450k (from 2024-25 Budget)
+    if (value <= 600000) {
+      // Concession for $450k-$600k
+      const standardDuty = calculateWAStampDutyStandard(value)
+      const concession = (600000 - value) / 150000 * standardDuty
+      return Math.round(Math.max(0, standardDuty - concession))
+    }
+  }
+  return Math.round(calculateWAStampDutyStandard(value))
+}
+
+const calculateWAStampDutyStandard = (value) => {
+  if (value <= 120000) return value * 0.019
+  if (value <= 150000) return 2280 + (value - 120000) * 0.029
+  if (value <= 360000) return 3150 + (value - 150000) * 0.039
+  if (value <= 725000) return 11340 + (value - 360000) * 0.049
+  return 29225 + (value - 725000) * 0.059
+}
+
+// SA Stamp Duty (2024-2025 rates)
+const calculateSAStampDuty = (value, isFirstHomeBuyer) => {
+  if (isFirstHomeBuyer) {
+    // SA offers concessions for new builds with no price cap (June 2024)
+    // For existing homes, concessions apply up to $650k
+    if (value <= 650000) {
+      const standardDuty = calculateSAStampDutyStandard(value)
+      return Math.round(standardDuty * 0.25) // 75% concession
+    }
+  }
+  return Math.round(calculateSAStampDutyStandard(value))
+}
+
+const calculateSAStampDutyStandard = (value) => {
+  if (value <= 12000) return value * 0.011
+  if (value <= 30000) return 132 + (value - 12000) * 0.022
+  if (value <= 50000) return 528 + (value - 30000) * 0.033
+  if (value <= 100000) return 1188 + (value - 50000) * 0.044
+  if (value <= 200000) return 3388 + (value - 100000) * 0.05
+  if (value <= 250000) return 8388 + (value - 200000) * 0.055
+  if (value <= 300000) return 11138 + (value - 250000) * 0.06
+  return 14138 + (value - 300000) * 0.065
+}
+
+// TAS Stamp Duty (2024-2025 rates)
+const calculateTASStampDuty = (value, isFirstHomeBuyer) => {
+  if (isFirstHomeBuyer) {
+    if (value <= 750000) return 0 // Full exemption up to $750k (from Feb 2024)
+  }
+  return Math.round(calculateTASStampDutyStandard(value))
+}
+
+const calculateTASStampDutyStandard = (value) => {
+  if (value <= 3000) return 50
+  if (value <= 25000) return 50 + (value - 3000) * 0.0175
+  if (value <= 75000) return 435 + (value - 25000) * 0.035
+  if (value <= 200000) return 2185 + (value - 75000) * 0.04
+  if (value <= 375000) return 7185 + (value - 200000) * 0.043
+  return 14710 + (value - 375000) * 0.045
+}
+
+// NT Stamp Duty (2024-2025 rates) - No stamp duty on property purchases
+const calculateNTStampDuty = (value, isFirstHomeBuyer) => {
+  return 0 // NT has no stamp duty on property purchases
+}
+
+// ACT Stamp Duty (2024-2025 rates)
+const calculateACTStampDuty = (value, isFirstHomeBuyer) => {
+  if (isFirstHomeBuyer) {
+    // New homes: No stamp duty up to $470k, concessions up to $607k
+    // Vacant land: No stamp duty up to $281.2k, concessions up to $329.5k
+    if (value <= 470000) return 0 // Full exemption for new homes
+    if (value <= 607000) {
+      // Concession for new builds $470k-$607k
+      const standardDuty = calculateACTStampDutyStandard(value)
+      const concession = (607000 - value) / 137000 * standardDuty
+      return Math.round(Math.max(0, standardDuty - concession))
+    }
+  }
+  return Math.round(calculateACTStampDutyStandard(value))
+}
+
+const calculateACTStampDutyStandard = (value) => {
+  // ACT rates vary - simplified calculation
+  if (value <= 200000) return value * 0.022
+  if (value <= 300000) return 4400 + (value - 200000) * 0.045
+  if (value <= 500000) return 8900 + (value - 300000) * 0.048
+  return 18500 + (value - 500000) * 0.055
 }
 
 // Mortgage registration fees by state (2025)
