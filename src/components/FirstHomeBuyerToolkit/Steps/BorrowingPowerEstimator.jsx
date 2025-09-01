@@ -16,7 +16,11 @@ import {
   Building,
   Percent,
   Calendar,
-  CreditCard
+  CreditCard,
+  Plus,
+  X,
+  Car,
+  Trash2
 } from 'lucide-react'
 import { useStepData, useToolkit } from '../ToolkitContext'
 import { 
@@ -36,6 +40,7 @@ const BorrowingPowerEstimator = () => {
   
   const [errors, setErrors] = useState({})
   const [results, setResults] = useState(null)
+  const [liabilities, setLiabilities] = useState([])
   
   // Collapsible section states
   const [expandedSections, setExpandedSections] = useState({
@@ -53,7 +58,7 @@ const BorrowingPowerEstimator = () => {
     monthlyLivingExpenses: data.monthlyLivingExpenses || '',
     hasHECS: data.hasHECS || false,
     hecsBalance: data.hecsBalance || '',
-    monthlyLiabilities: data.monthlyLiabilities || '',
+    monthlyLiabilities: data.monthlyLiabilities || 0,
     
     // Loan Preferences
     propertyType: data.propertyType || 'owner-occupied', // 'owner-occupied' or 'investment'
@@ -75,6 +80,53 @@ const BorrowingPowerEstimator = () => {
       [section]: !prev[section]
     }))
   }
+
+  // Liability management functions
+  const addLiability = () => {
+    const newLiability = {
+      id: Date.now(),
+      type: 'credit_card',
+      description: '',
+      monthlyPayment: 0,
+      balance: 0,
+      creditLimit: 0
+    }
+    setLiabilities(prev => [...prev, newLiability])
+  }
+
+  const removeLiability = (id) => {
+    setLiabilities(prev => prev.filter(liability => liability.id !== id))
+  }
+
+  const updateLiability = (id, field, value) => {
+    setLiabilities(prev => prev.map(liability => {
+      if (liability.id === id) {
+        const updatedLiability = {
+          ...liability,
+          [field]: ['monthlyPayment', 'balance', 'creditLimit'].includes(field) ? parseFloat(value) || 0 : value
+        }
+        
+        // Auto-calculate monthly payment for credit cards based on 3.8% of limit
+        if (liability.type === 'credit_card' && field === 'creditLimit') {
+          updatedLiability.monthlyPayment = (parseFloat(value) || 0) * 0.038
+        }
+        
+        return updatedLiability
+      }
+      return liability
+    }))
+  }
+
+  // Calculate total monthly liabilities from individual items
+  const totalMonthlyLiabilities = liabilities.reduce((sum, liability) => sum + (liability.monthlyPayment || 0), 0)
+
+  // Update formData when liabilities change
+  useEffect(() => {
+    setFormData(prev => ({
+      ...prev,
+      monthlyLiabilities: totalMonthlyLiabilities
+    }))
+  }, [totalMonthlyLiabilities])
 
   // Update form data
   const handleInputChange = (field, value) => {
@@ -209,38 +261,6 @@ const BorrowingPowerEstimator = () => {
 
   return (
     <div className="max-w-6xl mx-auto space-y-8">
-      
-      {/* Scenario Selection */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-white/80 backdrop-blur-xl rounded-2xl p-6 shadow-xl border border-white/20"
-      >
-        <h2 className="text-xl font-bold text-gray-900 mb-4 text-center">What's Your Situation?</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {[
-            { value: 'single', label: 'Single Person', icon: '👤', desc: 'Individual home buyer' },
-            { value: 'couple', label: 'Couple', icon: '👫', desc: 'Two income earners' }
-          ].map((scenario) => (
-            <button
-              key={scenario.value}
-              onClick={() => handleInputChange('scenario', scenario.value)}
-              className={`p-4 rounded-xl border-2 transition-all ${
-                formData.scenario === scenario.value
-                  ? 'bg-blue-50 border-blue-500 text-blue-700'
-                  : 'bg-white border-gray-200 text-gray-700 hover:border-blue-300 hover:bg-blue-50'
-              }`}
-            >
-              <div className="text-center space-y-2">
-                <div className="text-2xl">{scenario.icon}</div>
-                <div className="font-semibold">{scenario.label}</div>
-                <div className="text-sm opacity-75">{scenario.desc}</div>
-              </div>
-            </button>
-          ))}
-        </div>
-      </motion.div>
-
       {/* Main Calculator - 2 Card Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         
@@ -256,6 +276,33 @@ const BorrowingPowerEstimator = () => {
           </div>
 
           <div className="space-y-6">
+            {/* Scenario Selection - Moved here for better space usage */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h4 className="text-sm font-semibold text-blue-700 mb-3">Your Situation</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {[
+                  { value: 'single', label: 'Single Person', icon: '👤', desc: 'Individual home buyer' },
+                  { value: 'couple', label: 'Couple', icon: '👫', desc: 'Two income earners' }
+                ].map((scenario) => (
+                  <button
+                    key={scenario.value}
+                    onClick={() => handleInputChange('scenario', scenario.value)}
+                    className={`p-3 rounded-lg border-2 transition-all text-center ${
+                      formData.scenario === scenario.value
+                        ? 'bg-blue-100 border-blue-500 text-blue-800'
+                        : 'bg-white border-blue-200 text-blue-700 hover:border-blue-400 hover:bg-blue-50'
+                    }`}
+                  >
+                    <div className="space-y-1">
+                      <div className="text-lg">{scenario.icon}</div>
+                      <div className="font-semibold text-sm">{scenario.label}</div>
+                      <div className="text-xs opacity-75">{scenario.desc}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Primary Income */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -372,23 +419,155 @@ const BorrowingPowerEstimator = () => {
               </div>
             </div>
 
-            {/* Monthly Liabilities */}
+            {/* Monthly Liabilities - Individual Debt Management */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Monthly Debt Repayments
-              </label>
-              <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="number"
-                  value={formData.monthlyLiabilities}
-                  onChange={(e) => handleInputChange('monthlyLiabilities', e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-lg text-lg focus:border-blue-500 focus:outline-none transition-colors"
-                  placeholder="0"
-                />
+              <div className="flex items-center justify-between mb-3">
+                <label className="block text-sm font-semibold text-gray-700">
+                  Monthly Debt Repayments
+                </label>
+                <button
+                  type="button"
+                  onClick={addLiability}
+                  className="flex items-center space-x-1 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Plus className="h-3 w-3" />
+                  <span>Add Liability</span>
+                </button>
               </div>
-              <p className="text-xs text-gray-500 mt-1">
-                Credit cards, personal loans, car loans, existing mortgages (exclude HECS)
+
+              {liabilities.length === 0 ? (
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                  <CreditCard className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                  <p className="text-sm text-gray-500 mb-2">No current debt repayments</p>
+                  <p className="text-xs text-gray-400">Click "Add Liability" to include credit cards, loans, or other debts</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {liabilities.map((liability) => (
+                    <div key={liability.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center space-x-2">
+                          {liability.type === 'credit_card' && <CreditCard className="h-4 w-4 text-red-500" />}
+                          {liability.type === 'personal_loan' && <DollarSign className="h-4 w-4 text-orange-500" />}
+                          {liability.type === 'car_loan' && <Car className="h-4 w-4 text-blue-500" />}
+                          {liability.type === 'other' && <Settings className="h-4 w-4 text-gray-500" />}
+                          <select
+                            value={liability.type}
+                            onChange={(e) => updateLiability(liability.id, 'type', e.target.value)}
+                            className="text-sm font-medium bg-transparent border-none focus:outline-none"
+                          >
+                            <option value="credit_card">Credit Card</option>
+                            <option value="personal_loan">Personal Loan</option>
+                            <option value="car_loan">Car Loan</option>
+                            <option value="other">Other Debt</option>
+                          </select>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeLiability(liability.id)}
+                          className="text-gray-400 hover:text-red-500 transition-colors"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">
+                            Description
+                          </label>
+                          <input
+                            type="text"
+                            value={liability.description}
+                            onChange={(e) => updateLiability(liability.id, 'description', e.target.value)}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:border-blue-500 focus:outline-none"
+                            placeholder={liability.type === 'credit_card' ? 'Westpac Credit Card' : liability.type === 'car_loan' ? 'Toyota Camry' : 'Description'}
+                          />
+                        </div>
+                        {liability.type === 'credit_card' ? (
+                          <>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Credit Limit
+                              </label>
+                              <div className="relative">
+                                <DollarSign className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
+                                <input
+                                  type="number"
+                                  value={liability.creditLimit}
+                                  onChange={(e) => updateLiability(liability.id, 'creditLimit', e.target.value)}
+                                  className="w-full pl-6 pr-3 py-2 text-sm border border-gray-300 rounded-md focus:border-blue-500 focus:outline-none"
+                                  placeholder="10000"
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Monthly Payment (Auto)
+                              </label>
+                              <div className="relative">
+                                <DollarSign className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
+                                <input
+                                  type="number"
+                                  value={liability.monthlyPayment}
+                                  readOnly
+                                  className="w-full pl-6 pr-3 py-2 text-sm border border-gray-300 rounded-md bg-gray-50 text-gray-600"
+                                  placeholder="Auto-calculated"
+                                />
+                              </div>
+                              <p className="text-xs text-gray-500 mt-1">3.8% of credit limit</p>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Monthly Payment
+                              </label>
+                              <div className="relative">
+                                <DollarSign className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
+                                <input
+                                  type="number"
+                                  value={liability.monthlyPayment}
+                                  onChange={(e) => updateLiability(liability.id, 'monthlyPayment', e.target.value)}
+                                  className="w-full pl-6 pr-3 py-2 text-sm border border-gray-300 rounded-md focus:border-blue-500 focus:outline-none"
+                                  placeholder="0"
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Total Balance (Optional)
+                              </label>
+                              <div className="relative">
+                                <DollarSign className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
+                                <input
+                                  type="number"
+                                  value={liability.balance}
+                                  onChange={(e) => updateLiability(liability.id, 'balance', e.target.value)}
+                                  className="w-full pl-6 pr-3 py-2 text-sm border border-gray-300 rounded-md focus:border-blue-500 focus:outline-none"
+                                  placeholder="0"
+                                />
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  
+                  {/* Total Summary */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-blue-700">Total Monthly Repayments</span>
+                      <span className="text-lg font-bold text-blue-600">{formatCurrency(totalMonthlyLiabilities)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              <p className="text-xs text-gray-500 mt-2">
+                Include all debt repayments except HECS/HELP (calculated separately)
               </p>
             </div>
 
@@ -440,238 +619,255 @@ const BorrowingPowerEstimator = () => {
                 </motion.div>
               )}
             </div>
-
-            {/* Property Type Selection */}
-            <div className="bg-gray-50 rounded-lg p-4">
-              <h4 className="text-sm font-semibold text-gray-700 mb-3">Property Type</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {[
-                  { 
-                    value: 'owner-occupied', 
-                    label: 'Owner Occupied', 
-                    icon: Home,
-                    desc: 'Live in the property'
-                  },
-                  { 
-                    value: 'investment', 
-                    label: 'Investment Property', 
-                    icon: Building,
-                    desc: 'Rent out for income'
-                  }
-                ].map((type) => (
-                  <button
-                    key={type.value}
-                    onClick={() => handleInputChange('propertyType', type.value)}
-                    className={`p-3 rounded-lg border-2 transition-all text-left ${
-                      formData.propertyType === type.value
-                        ? 'bg-blue-50 border-blue-500 text-blue-700'
-                        : 'bg-white border-gray-200 text-gray-700 hover:border-blue-300'
-                    }`}
-                  >
-                    <div className="flex items-start space-x-3">
-                      <type.icon className="h-5 w-5 mt-0.5" />
-                      <div>
-                        <div className="font-medium text-sm">{type.label}</div>
-                        <div className="text-xs opacity-75">{type.desc}</div>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Advanced Loan Settings - Collapsible */}
-            <div className="border border-gray-200 rounded-lg">
-              <button
-                onClick={() => toggleSection('loanSettings')}
-                className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors"
-              >
-                <div className="flex items-center space-x-2">
-                  <Settings className="h-5 w-5 text-gray-600" />
-                  <span className="font-semibold text-gray-700">Advanced Loan Settings</span>
-                </div>
-                {expandedSections.loanSettings ? (
-                  <ChevronUp className="h-5 w-5 text-gray-400" />
-                ) : (
-                  <ChevronDown className="h-5 w-5 text-gray-400" />
-                )}
-              </button>
-              
-              {expandedSections.loanSettings && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="px-4 pb-4 space-y-4 border-t border-gray-100"
-                >
-                  {/* Loan Type */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Loan Type
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {[
-                        { value: 'principal_interest', label: 'Principal & Interest' },
-                        { value: 'interest_only', label: 'Interest Only' }
-                      ].map((type) => (
-                        <button
-                          key={type.value}
-                          onClick={() => handleInputChange('loanType', type.value)}
-                          className={`p-2 rounded-md text-sm font-medium transition-all ${
-                            formData.loanType === type.value
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-white text-gray-700 border border-gray-300 hover:border-blue-300'
-                          }`}
-                        >
-                          {type.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Repayment Frequency */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Repayment Frequency
-                    </label>
-                    <select
-                      value={formData.repaymentFrequency}
-                      onChange={(e) => handleInputChange('repaymentFrequency', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                    >
-                      <option value="monthly">Monthly</option>
-                      <option value="fortnightly">Fortnightly</option>
-                      <option value="weekly">Weekly</option>
-                    </select>
-                  </div>
-
-                  {/* Term and Rate */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Loan Term (Years)
-                      </label>
-                      <div className="relative">
-                        <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                        <input
-                          type="number"
-                          min="5"
-                          max="30"
-                          value={formData.termYears}
-                          onChange={(e) => handleInputChange('termYears', e.target.value)}
-                          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                          placeholder="30"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Interest Rate (%)
-                      </label>
-                      <div className="relative">
-                        <Percent className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="0.1"
-                          max="15"
-                          value={formData.interestRate}
-                          onChange={(e) => handleInputChange('interestRate', e.target.value)}
-                          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                          placeholder="5.5"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </div>
-
-            {/* Investment Property Details - Collapsible */}
-            {formData.propertyType === 'investment' && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                className="border border-orange-200 rounded-lg"
-              >
-                <button
-                  onClick={() => toggleSection('investmentProperty')}
-                  className="w-full flex items-center justify-between p-4 text-left hover:bg-orange-50 transition-colors"
-                >
-                  <div className="flex items-center space-x-2">
-                    <Building className="h-5 w-5 text-orange-600" />
-                    <span className="font-semibold text-orange-700">Investment Property Details</span>
-                  </div>
-                  {expandedSections.investmentProperty ? (
-                    <ChevronUp className="h-5 w-5 text-orange-400" />
-                  ) : (
-                    <ChevronDown className="h-5 w-5 text-orange-400" />
-                  )}
-                </button>
-                
-                {expandedSections.investmentProperty && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    className="px-4 pb-4 space-y-4 border-t border-orange-100"
-                  >
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Expected Rental Yield (%)
-                        </label>
-                        <div className="relative">
-                          <Percent className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                          <input
-                            type="number"
-                            step="0.1"
-                            min="0"
-                            max="10"
-                            value={formData.expectedRentalYield}
-                            onChange={(e) => handleInputChange('expectedRentalYield', e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                            placeholder="4.5"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Marginal Tax Rate (%)
-                        </label>
-                        <div className="relative">
-                          <Percent className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                          <input
-                            type="number"
-                            step="0.5"
-                            min="0"
-                            max="47"
-                            value={formData.marginalTaxRate}
-                            onChange={(e) => handleInputChange('marginalTaxRate', e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                            placeholder="32.5"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-xs text-orange-700 bg-orange-50 p-3 rounded-lg">
-                      <Info className="inline h-3 w-3 mr-1" />
-                      Investment properties have higher interest rates and stricter serviceability requirements. 
-                      Rental income is typically assessed at 80% for serviceability calculations.
-                    </div>
-                  </motion.div>
-                )}
-              </motion.div>
-            )}
-
           </div>
         </motion.div>
 
-        {/* Right Card: Borrowing Capacity Results */}
-        <motion.div
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="space-y-6"
-        >
+        {/* Right Side: Loan Settings & Results */}
+        <div className="space-y-6">
+          {/* Loan Settings Card */}
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-xl border border-white/20 overflow-hidden"
+          >
+            <div className="px-6 py-4 border-b border-gray-100">
+              <div className="flex items-center space-x-2">
+                <Settings className="h-5 w-5 text-purple-600" />
+                <h3 className="text-lg font-bold text-gray-900">Loan Preferences</h3>
+              </div>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              {/* Property Type Selection */}
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-3">Property Type</h4>
+                <div className="grid grid-cols-1 gap-2">
+                  {[
+                    { 
+                      value: 'owner-occupied', 
+                      label: 'Owner Occupied', 
+                      icon: Home,
+                      desc: 'Live in the property'
+                    },
+                    { 
+                      value: 'investment', 
+                      label: 'Investment Property', 
+                      icon: Building,
+                      desc: 'Rent out for income'
+                    }
+                  ].map((type) => (
+                    <button
+                      key={type.value}
+                      onClick={() => handleInputChange('propertyType', type.value)}
+                      className={`p-3 rounded-lg border-2 transition-all text-left ${
+                        formData.propertyType === type.value
+                          ? 'bg-purple-50 border-purple-500 text-purple-700'
+                          : 'bg-white border-gray-200 text-gray-700 hover:border-purple-300'
+                      }`}
+                    >
+                      <div className="flex items-start space-x-3">
+                        <type.icon className="h-4 w-4 mt-0.5" />
+                        <div>
+                          <div className="font-medium text-sm">{type.label}</div>
+                          <div className="text-xs opacity-75">{type.desc}</div>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Advanced Loan Settings - Collapsible */}
+              <div className="border border-gray-200 rounded-lg">
+                <button
+                  onClick={() => toggleSection('loanSettings')}
+                  className="w-full flex items-center justify-between p-3 text-left hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center space-x-2">
+                    <Settings className="h-4 w-4 text-gray-600" />
+                    <span className="font-medium text-gray-700 text-sm">Advanced Settings</span>
+                  </div>
+                  {expandedSections.loanSettings ? (
+                    <ChevronUp className="h-4 w-4 text-gray-400" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4 text-gray-400" />
+                  )}
+                </button>
+                
+                {expandedSections.loanSettings && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="px-3 pb-3 space-y-3 border-t border-gray-100"
+                  >
+                    {/* Loan Type */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Loan Type
+                      </label>
+                      <div className="grid grid-cols-1 gap-2">
+                        {[
+                          { value: 'principal_interest', label: 'Principal & Interest' },
+                          { value: 'interest_only', label: 'Interest Only' }
+                        ].map((type) => (
+                          <button
+                            key={type.value}
+                            onClick={() => handleInputChange('loanType', type.value)}
+                            className={`p-2 rounded-md text-xs font-medium transition-all ${
+                              formData.loanType === type.value
+                                ? 'bg-purple-600 text-white'
+                                : 'bg-white text-gray-700 border border-gray-300 hover:border-purple-300'
+                            }`}
+                          >
+                            {type.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Repayment Frequency */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Repayment Frequency
+                      </label>
+                      <select
+                        value={formData.repaymentFrequency}
+                        onChange={(e) => handleInputChange('repaymentFrequency', e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                      >
+                        <option value="monthly">Monthly</option>
+                        <option value="fortnightly">Fortnightly</option>
+                        <option value="weekly">Weekly</option>
+                      </select>
+                    </div>
+
+                    {/* Term and Rate */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Term (Years)
+                        </label>
+                        <div className="relative">
+                          <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
+                          <input
+                            type="number"
+                            min="5"
+                            max="30"
+                            value={formData.termYears}
+                            onChange={(e) => handleInputChange('termYears', e.target.value)}
+                            className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                            placeholder="30"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Rate (%)
+                        </label>
+                        <div className="relative">
+                          <Percent className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0.1"
+                            max="15"
+                            value={formData.interestRate}
+                            onChange={(e) => handleInputChange('interestRate', e.target.value)}
+                            className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                            placeholder="5.5"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </div>
+
+              {/* Investment Property Details - Collapsible */}
+              {formData.propertyType === 'investment' && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="border border-orange-200 rounded-lg"
+                >
+                  <button
+                    onClick={() => toggleSection('investmentProperty')}
+                    className="w-full flex items-center justify-between p-3 text-left hover:bg-orange-50 transition-colors"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <Building className="h-4 w-4 text-orange-600" />
+                      <span className="font-medium text-orange-700 text-sm">Investment Details</span>
+                    </div>
+                    {expandedSections.investmentProperty ? (
+                      <ChevronUp className="h-4 w-4 text-orange-400" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 text-orange-400" />
+                    )}
+                  </button>
+                  
+                  {expandedSections.investmentProperty && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="px-3 pb-3 space-y-3 border-t border-orange-100"
+                    >
+                      <div className="grid grid-cols-1 gap-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Rental Yield (%)
+                          </label>
+                          <div className="relative">
+                            <Percent className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
+                            <input
+                              type="number"
+                              step="0.1"
+                              min="0"
+                              max="10"
+                              value={formData.expectedRentalYield}
+                              onChange={(e) => handleInputChange('expectedRentalYield', e.target.value)}
+                              className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none"
+                              placeholder="4.5"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Tax Rate (%)
+                          </label>
+                          <div className="relative">
+                            <Percent className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
+                            <input
+                              type="number"
+                              step="0.5"
+                              min="0"
+                              max="47"
+                              value={formData.marginalTaxRate}
+                              onChange={(e) => handleInputChange('marginalTaxRate', e.target.value)}
+                              className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none"
+                              placeholder="32.5"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-xs text-orange-700 bg-orange-50 p-2 rounded-lg">
+                        <Info className="inline h-3 w-3 mr-1" />
+                        Investment properties have stricter lending criteria and rental income assessed at 80%.
+                      </div>
+                    </motion.div>
+                  )}
+                </motion.div>
+              )}
+            </div>
+          </motion.div>
+
+          {/* Results Card */}
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.1 }}
+            className="space-y-4"
+          >
           {results ? (
             <>
               {/* Main Result */}
@@ -763,7 +959,8 @@ const BorrowingPowerEstimator = () => {
               </div>
             </div>
           )}
-        </motion.div>
+          </motion.div>
+        </div>
       </div>
 
       {/* Important Notes */}
