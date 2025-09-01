@@ -4,21 +4,29 @@
 
 **UNIVERSAL FRAMEWORK FOR ALL PROJECTS**
 
-### Model Selection Guide:
+### Model Selection Guide (With Fallback Strategy):
+
+**PREFERRED APPROACH:**
 - **🧠 OPUS**: Planning, Architecture, Research, Analysis, Code Review
 - **⚡ SONNET**: Implementation, Bug Fixes, Styling, Testing, Minor Changes
 
+**WHEN OPUS LIMIT REACHED:**
+- **⚡ SONNET**: All tasks (planning AND implementation)
+- Use structured planning templates to maintain quality
+- Separate planning and implementation into distinct sessions
+
 ### Clear Communication Patterns:
 ```
-[PLAN] - Use Opus for planning/architecture
+[PLAN] - Use Opus for planning/architecture (preferred)
+[PLAN-SONNET] - Use Sonnet for planning (when Opus limited)
 [BUILD] - Use Sonnet for implementation  
 [DEBUG] - Use Sonnet for quick fixes
-[REVIEW] - Use Opus for code review/analysis
+[REVIEW] - Use Opus for code review (preferred) or Sonnet (if limited)
 ```
 
 ### When to Use Each Model:
 
-**USE OPUS WHEN SAYING:**
+**USE OPUS WHEN SAYING (if available):**
 - "I want to add..." / "Let's create..."
 - "How should we approach..."
 - "What's the best way to..."
@@ -33,6 +41,12 @@
 - "Following the plan, create..."
 - "Debug why this isn't..."
 - "Run these tests..."
+
+**USE SONNET FOR PLANNING WHEN (Opus limited):**
+- "[PLAN-SONNET] I want to add..." 
+- "[PLAN-SONNET] How should we approach..."
+- "[PLAN-SONNET] Research and design..."
+- Use structured planning templates for consistency
 
 ## 🚨 CRITICAL: CONCURRENT EXECUTION & FILE MANAGEMENT
 
@@ -59,9 +73,10 @@
 - `/scripts` - Utility scripts
 - `/examples` - Example code
 
-## Planning Handoff Template
+## Planning Handoff Templates
 
-When completing planning phase (Opus), use this template for Sonnet:
+### When Opus Does Planning (Preferred):
+Use this template for handoff to Sonnet:
 
 ```markdown
 # Planning Handoff: [Feature Name]
@@ -92,6 +107,34 @@ Ready for: Implementation
 
 ## 🧪 Testing Checklist
 [What to test and verify]
+```
+
+### When Sonnet Does Planning (Opus Limited):
+Use structured approach with [PLAN-SONNET] tag:
+
+```markdown
+# [PLAN-SONNET] Planning Session: [Feature Name]
+Date: [Date]
+Planned by: Sonnet (Opus limit reached)
+
+## 🎯 Planning Checklist
+- [ ] Research requirements and constraints
+- [ ] Identify existing code patterns to follow
+- [ ] List all files that need modification
+- [ ] Define component props and state
+- [ ] Plan integration points
+- [ ] Consider edge cases and validation
+- [ ] Create step-by-step implementation plan
+
+## 📊 Feature Overview
+[Same structure as Opus template]
+
+## 💻 Detailed Implementation Steps
+[More detailed than Opus version since same model will implement]
+
+## 🔄 Implementation Session Handoff
+Ready for: Implementation (same session or next session)
+Note: Planning done by Sonnet due to Opus limits
 ```
 
 ## Project Overview
