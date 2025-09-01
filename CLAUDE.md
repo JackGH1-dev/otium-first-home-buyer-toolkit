@@ -1,4 +1,38 @@
-# Claude Code Configuration - Otium Property Toolkit
+# Claude Code Configuration - Universal Development Framework
+
+## 🎯 OPUS (PLANNING) → SONNET (IMPLEMENTATION) WORKFLOW
+
+**UNIVERSAL FRAMEWORK FOR ALL PROJECTS**
+
+### Model Selection Guide:
+- **🧠 OPUS**: Planning, Architecture, Research, Analysis, Code Review
+- **⚡ SONNET**: Implementation, Bug Fixes, Styling, Testing, Minor Changes
+
+### Clear Communication Patterns:
+```
+[PLAN] - Use Opus for planning/architecture
+[BUILD] - Use Sonnet for implementation  
+[DEBUG] - Use Sonnet for quick fixes
+[REVIEW] - Use Opus for code review/analysis
+```
+
+### When to Use Each Model:
+
+**USE OPUS WHEN SAYING:**
+- "I want to add..." / "Let's create..."
+- "How should we approach..."
+- "What's the best way to..."
+- "Research how to..."
+- "Review this code..."
+- "What are the edge cases..."
+
+**USE SONNET WHEN SAYING:**
+- "Implement this specification..."
+- "Fix the error on line..."
+- "Update the styling to..."
+- "Following the plan, create..."
+- "Debug why this isn't..."
+- "Run these tests..."
 
 ## 🚨 CRITICAL: CONCURRENT EXECUTION & FILE MANAGEMENT
 
@@ -25,6 +59,41 @@
 - `/scripts` - Utility scripts
 - `/examples` - Example code
 
+## Planning Handoff Template
+
+When completing planning phase (Opus), use this template for Sonnet:
+
+```markdown
+# Planning Handoff: [Feature Name]
+Date: [Date]
+Planned by: Opus
+Ready for: Implementation
+
+## 📊 Feature Overview
+**Purpose:** [Why building this]
+**User Story:** As a [user], I want to [action] so that [benefit]
+
+## 🎯 Success Criteria
+- [ ] Specific measurable outcomes
+
+## 📁 Files to Create/Modify
+### New Files:
+- Path: Purpose and structure
+
+### Modified Files:  
+- Path: Line numbers and changes
+
+## 💻 Implementation Steps
+### Step 1: [Name]
+[Exact code/instructions]
+
+## ⚠️ Edge Cases
+[Identified edge cases with solutions]
+
+## 🧪 Testing Checklist
+[What to test and verify]
+```
+
 ## Project Overview
 
 This project is the **Otium First Home Buyer Property Toolkit** - a comprehensive Australian property calculator with Firebase backend, React frontend, and integrated Goals dashboard system.
@@ -37,13 +106,21 @@ This project is the **Otium First Home Buyer Property Toolkit** - a comprehensiv
 - `npm run preview` - Preview built project
 - `npm run lint` - Run ESLint code quality checks
 
-### Development Workflow
+### Development Workflow - Two-Phase Approach
 
-1. **Analysis** - Use native Claude Code tools to analyze requirements
-2. **Planning** - Use TodoWrite to organize tasks systematically
-3. **Implementation** - Write/Edit components with proper architecture
-4. **Testing** - Test functionality through dev server and manual verification
-5. **Integration** - Ensure Firebase and routing work seamlessly
+#### Phase 1: Planning (OPUS)
+1. **Requirements Analysis** - Research APIs, regulations, user needs
+2. **Architecture Design** - Component structure, data flow, patterns
+3. **Edge Case Identification** - Error scenarios, validation rules
+4. **Task Breakdown** - Create detailed implementation steps
+5. **Handoff Creation** - Generate specification for Sonnet
+
+#### Phase 2: Implementation (SONNET)
+1. **Code Generation** - Follow handoff specification exactly
+2. **Bug Fixing** - Resolve errors and warnings
+3. **Testing** - Verify functionality works as planned
+4. **Optimization** - Performance and code improvements
+5. **Integration** - Connect with existing components
 
 ## Code Style & Best Practices
 
