@@ -53,6 +53,8 @@ const BorrowingPowerEstimator = () => {
   const [showHECS, setShowHECS] = useState(false)
   const [useHEMBenchmark, setUseHEMBenchmark] = useState(false)
   const [showHEMTooltip, setShowHEMTooltip] = useState(false)
+  const [showRentTooltip, setShowRentTooltip] = useState(false)
+  const [showRentalShadingTooltip, setShowRentalShadingTooltip] = useState(false)
 
   // Enhanced form state with all loan preferences
   const [formData, setFormData] = useState({
@@ -81,7 +83,17 @@ const BorrowingPowerEstimator = () => {
     // Investment Property Specific
     expectedRentalYield: data.expectedRentalYield || 4.5,
     managementFees: data.managementFees || 8,
-    marginalTaxRate: data.marginalTaxRate || 32.5
+    marginalTaxRate: data.marginalTaxRate || 32.5,
+    // New investment property fields
+    weeklyRent: data.weeklyRent || '',
+    propertyOwnership: data.propertyOwnership || 'even_split',
+    yourOwnershipPercent: data.yourOwnershipPercent || 50,
+    partnerOwnershipPercent: data.partnerOwnershipPercent || 50,
+    propertyExpenseType: data.propertyExpenseType || 'percentage', // 'percentage' or 'manual'
+    propertyExpensePercent: data.propertyExpensePercent || 15,
+    propertyExpenseManual: data.propertyExpenseManual || '',
+    // Rental expense for "renting elsewhere"
+    weeklyRentalExpense: data.weeklyRentalExpense || ''
   })
 
   // Toggle collapsible sections
@@ -185,20 +197,55 @@ const BorrowingPowerEstimator = () => {
   }, [totalMonthlyLiabilities])
 
   // Update form data
+  // Auto-calculate tax rate based on actual income
+  const getAutoTaxRate = (income) => {
+    const annualIncome = parseFloat(income) || parseFloat(formData.primaryIncome) || 0
+    // Calculate marginal tax rate based on income brackets
+    if (annualIncome > 190000) return 45
+    if (annualIncome > 135000) return 37
+    if (annualIncome > 45000) return 30
+    if (annualIncome > 18200) return 16
+    return 0
+  }
+
   const handleInputChange = (field, value) => {
     const numericFields = [
       'primaryIncome', 'secondaryIncome', 'monthlyLivingExpenses', 'hecsBalance', 
       'dependents', 'monthlyLiabilities', 'interestRate', 'termYears',
-      'expectedRentalYield', 'managementFees', 'marginalTaxRate'
+      'expectedRentalYield', 'managementFees', 'marginalTaxRate',
+      'weeklyRent', 'yourOwnershipPercent', 'partnerOwnershipPercent', 
+      'propertyExpensePercent', 'propertyExpenseManual', 'weeklyRentalExpense'
     ]
     const numericValue = numericFields.includes(field) 
       ? parseFloat(value) || 0 
       : value
 
-    setFormData(prev => ({
-      ...prev,
-      [field]: numericValue
-    }))
+    setFormData(prev => {
+      const newData = { ...prev, [field]: numericValue }
+      
+      // Auto-update tax rate when income changes
+      if (field === 'primaryIncome') {
+        newData.marginalTaxRate = getAutoTaxRate(numericValue)
+      }
+      
+      // Handle property ownership changes
+      if (field === 'propertyOwnership') {
+        // Reset to even split when ownership type changes
+        if (numericValue === 'even_split') {
+          newData.yourOwnershipPercent = 50
+          newData.partnerOwnershipPercent = 50
+        }
+      }
+      
+      // Keep ownership percentages in sync (always total 100%)
+      if (field === 'yourOwnershipPercent') {
+        newData.partnerOwnershipPercent = 100 - numericValue
+      } else if (field === 'partnerOwnershipPercent') {
+        newData.yourOwnershipPercent = 100 - numericValue
+      }
+      
+      return newData
+    })
 
     // Clear errors for this field
     if (errors[field]) {
@@ -234,7 +281,7 @@ const BorrowingPowerEstimator = () => {
     if (postPurchaseLiving === 'own-property') return 0
     
     const NOTIONAL_RENT_WEEKLY = 150 // Minimum lender assessment
-    const userWeeklyAmount = parseFloat(weeklyRentBoard) || 0
+    const userWeeklyAmount = parseFloat(weeklyRentBoard) || parseFloat(formData.weeklyRentalExpense) || 0
     const weeklyRent = Math.max(userWeeklyAmount, NOTIONAL_RENT_WEEKLY)
     
     return weeklyRent * 52 / 12 // Convert to monthly
@@ -267,7 +314,53 @@ const BorrowingPowerEstimator = () => {
     const primaryIncome = parseFloat(formData.primaryIncome) || 0
     const secondaryIncome = formData.scenario === 'couple' ? parseFloat(formData.secondaryIncome) || 0 : 0
     const otherIncomeTotal = calculateOtherIncomeTotal()
-    const totalAnnualIncome = primaryIncome + secondaryIncome + otherIncomeTotal
+    
+    // Calculate net income including investment property (Net Income Method)
+    let grossRentalIncome = 0
+    let totalGrossIncome = primaryIncome + secondaryIncome + otherIncomeTotal
+    let totalNetIncome = 0
+    
+    if (formData.propertyType === 'investment' && parseFloat(formData.weeklyRent) > 0) {
+      const weeklyRent = parseFloat(formData.weeklyRent) || 0
+      const grossAnnualRent = weeklyRent * 52
+      
+      // Apply ownership percentage to gross rental income
+      const ownershipPercent = formData.propertyOwnership === 'you_only' ? 100 :
+                              formData.propertyOwnership === 'partner_only' ? 0 :
+                              parseFloat(formData.yourOwnershipPercent) || 50
+      grossRentalIncome = (grossAnnualRent * ownershipPercent) / 100
+      
+      // Calculate investment property expenses and interest deductions
+      const interestRate = parseFloat(formData.interestRate) || 5.5
+      const estimatedPropertyValue = (weeklyRent * 52) / 0.035 // 3.5% yield assumption (more realistic)
+      const estimatedLoanAmount = estimatedPropertyValue * 0.8 // 80% LVR
+      const annualInterest = estimatedLoanAmount * (interestRate / 100)
+      const rentalExpenses = grossRentalIncome * 0.2 // 20% expenses
+      
+      
+      // Calculate net taxable rental income
+      const netTaxableRentalIncome = grossRentalIncome - rentalExpenses - annualInterest
+      
+      // Calculate total taxable income
+      const totalTaxableIncome = totalGrossIncome + netTaxableRentalIncome
+      
+      // Calculate tax payable on taxable income
+      const taxCalculationResult = calculateAustralianNetIncome(totalTaxableIncome)
+      const taxPayable = totalTaxableIncome - taxCalculationResult.netIncome
+      
+      // Calculate final net income: Gross Income - Tax Payable
+      const totalGrossIncome_All = totalGrossIncome + grossRentalIncome
+      totalNetIncome = totalGrossIncome_All - taxPayable
+      
+      // Add gross rental to total gross for HECS calculation
+      totalGrossIncome += grossRentalIncome
+    } else {
+      // No investment property - calculate tax on employment income only
+      const totalTaxResult = calculateAustralianNetIncome(totalGrossIncome)
+      totalNetIncome = totalTaxResult.netIncome
+    }
+    
+    // Debug logging
 
     // 2. Calculate HECS repayments for each applicant
     const primaryHECS = formData.primaryHECSBalance > 0 ? calculateHECSRepayment(primaryIncome) : 0
@@ -278,10 +371,12 @@ const BorrowingPowerEstimator = () => {
     // 3. Calculate post-purchase rental expense
     const rentalExpense = calculateRentalExpense(formData.postPurchaseLiving, formData.weeklyRentBoard)
     
+    
     // 4. Enhanced base parameters
     const baseParams = {
-      primaryIncome: totalAnnualIncome, // Use total income including other sources
+      primaryIncome: totalGrossIncome, // Keep for HECS calculation
       secondaryIncome: 0, // Already included in primaryIncome
+      preCalculatedNetIncome: totalNetIncome, // Pass our calculated net income
       existingDebts: 0,
       livingExpenses: (parseFloat(formData.monthlyLivingExpenses) || 0) + rentalExpense,
       monthlyLiabilities: totalMonthlyLiabilities + (totalAnnualHECS / 12), // Include HECS
@@ -295,17 +390,22 @@ const BorrowingPowerEstimator = () => {
       repaymentFrequency: formData.repaymentFrequency,
       // Enhanced details
       otherIncomeTotal,
+      netRentalIncome: grossRentalIncome,
       rentalExpense,
       totalAnnualHECS
     }
 
+    
     const result = calculateBorrowingPower(baseParams)
+    
     
     // Add enhanced details to results
     const enhancedResult = {
       ...result,
-      totalAnnualIncome,
+      totalAnnualIncome: totalGrossIncome,
       otherIncomeTotal,
+      netRentalIncome: grossRentalIncome,
+      grossRentalIncome,
       rentalExpense,
       hecsImpact: totalAnnualHECS,
       details: {
@@ -1073,59 +1173,238 @@ const BorrowingPowerEstimator = () => {
                 </div>
               </div>
 
-              {/* Post-Purchase Living Situation */}
+              {/* Post-Purchase Living Situation - Compact Layout */}
               <div className="border-t border-gray-200 pt-4 mt-4">
-                <label className="block text-sm font-semibold text-gray-700 mb-3">
-                  After this purchase, you will be:
-                </label>
-                <select
-                  value={formData.postPurchaseLiving}
-                  onChange={(e) => handleInputChange('postPurchaseLiving', e.target.value)}
-                  className="w-full p-2 text-sm border border-gray-300 rounded-lg mb-3 focus:border-purple-500 focus:outline-none"
-                >
-                  {formData.propertyType === 'owner-occupied' ? (
-                    <>
-                      <option value="own-property">Living in the purchased property</option>
-                      <option value="renting">Renting elsewhere</option>
-                      <option value="parents">Living with parents/family</option>
-                      <option value="other">Other arrangement</option>
-                    </>
-                  ) : (
-                    <>
-                      <option value="renting">Renting elsewhere</option>
-                      <option value="parents">Living with parents/family</option>
-                      <option value="other">Other arrangement</option>
-                    </>
-                  )}
-                </select>
-                
-                {formData.postPurchaseLiving !== 'own-property' && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    className="bg-amber-50 border border-amber-200 rounded-lg p-3"
-                  >
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Weekly rent/board payment:
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-end">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      After this purchase, you will be
                     </label>
-                    <div className="relative">
-                      <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
-                      <input
-                        type="number"
-                        value={formData.weeklyRentBoard}
-                        onChange={(e) => handleInputChange('weeklyRentBoard', e.target.value)}
-                        className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
-                        placeholder="350"
-                      />
-                    </div>
-                    <p className="text-xs text-amber-700 mt-2">
-                      💡 Lenders use minimum $150/week for assessment purposes
-                    </p>
-                  </motion.div>
-                )}
+                    <select
+                      value={formData.postPurchaseLiving}
+                      onChange={(e) => handleInputChange('postPurchaseLiving', e.target.value)}
+                      className="w-full p-2 text-sm border border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                    >
+                      {formData.propertyType === 'owner-occupied' ? (
+                        <>
+                          <option value="own-property">Living in the purchased property</option>
+                          <option value="renting">Renting elsewhere</option>
+                          <option value="parents">Living with parents/family</option>
+                          <option value="other">Other arrangement</option>
+                        </>
+                      ) : (
+                        <>
+                          <option value="renting">Renting elsewhere</option>
+                          <option value="parents">Living with parents/family</option>
+                          <option value="other">Other arrangement</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+
+                  {formData.postPurchaseLiving !== 'own-property' && (
+                    <motion.div
+                      initial={{ opacity: 0, width: 0 }}
+                      animate={{ opacity: 1, width: 'auto' }}
+                      className="relative"
+                    >
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        <span className="flex items-center gap-1">
+                          Weekly Rent
+                          <div className="relative inline-block">
+                            <button
+                              type="button"
+                              onMouseEnter={() => setShowRentTooltip(true)}
+                              onMouseLeave={() => setShowRentTooltip(false)}
+                              className="w-4 h-4 rounded-full bg-gray-300 text-white text-xs flex items-center justify-center hover:bg-gray-400 transition-colors"
+                            >
+                              ?
+                            </button>
+                            {showRentTooltip && (
+                              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-56 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg z-30">
+                                <div className="font-medium mb-1">Minimum Assessment</div>
+                                <div>
+                                  Lenders use minimum $150/week for assessment purposes, even if your actual rent is lower.
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </span>
+                      </label>
+                      <div className="relative">
+                        <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
+                        <input
+                          type="number"
+                          value={formData.weeklyRentBoard}
+                          onChange={(e) => handleInputChange('weeklyRentBoard', e.target.value)}
+                          className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                          placeholder="350"
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+                </div>
               </div>
 
-              {/* Advanced Loan Settings - Collapsible */}
+
+              {/* Investment Property Details - Collapsible */}
+              {formData.propertyType === 'investment' && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="border border-orange-200 rounded-lg"
+                >
+                  <button
+                    onClick={() => toggleSection('investmentProperty')}
+                    className="w-full flex items-center justify-between p-3 text-left hover:bg-orange-50 transition-colors"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <Building className="h-4 w-4 text-orange-600" />
+                      <span className="font-medium text-orange-700 text-sm">Investment Details</span>
+                    </div>
+                    {expandedSections.investmentProperty ? (
+                      <ChevronUp className="h-4 w-4 text-orange-400" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 text-orange-400" />
+                    )}
+                  </button>
+                  
+                  {expandedSections.investmentProperty && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="px-3 pb-3 space-y-3 border-t border-orange-100"
+                    >
+                      <div className="grid grid-cols-1 gap-3">
+                        {/* Weekly Rent Input */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Weekly Rent
+                          </label>
+                          <div className="relative">
+                            <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
+                            <input
+                              type="number"
+                              min="0"
+                              value={formData.weeklyRent}
+                              onChange={(e) => handleInputChange('weeklyRent', e.target.value)}
+                              className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none"
+                              placeholder="500"
+                            />
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">Expected weekly rental income</p>
+                        </div>
+
+                        {/* Property Ownership Structure */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Property Ownership
+                          </label>
+                          <select
+                            value={formData.propertyOwnership}
+                            onChange={(e) => handleInputChange('propertyOwnership', e.target.value)}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none bg-white"
+                          >
+                            <option value="even_split">You & Partner (50/50 split)</option>
+                            <option value="manual_split">You & Partner (manual split)</option>
+                            <option value="you_only">You only (100%)</option>
+                            <option value="partner_only">Partner only (0%)</option>
+                          </select>
+                          <p className="text-xs text-gray-500 mt-1">Ownership affects your portion of rental income</p>
+                        </div>
+
+                        {/* Manual Ownership Percentages */}
+                        {(formData.propertyOwnership === 'manual_split' || formData.propertyOwnership === 'even_split') && (
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Your Share (%)
+                              </label>
+                              <div className="relative">
+                                <Percent className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  value={formData.yourOwnershipPercent}
+                                  onChange={(e) => handleInputChange('yourOwnershipPercent', e.target.value)}
+                                  disabled={formData.propertyOwnership === 'even_split'}
+                                  className={`w-full pl-6 pr-2 py-1.5 text-xs border border-gray-300 rounded-md focus:border-orange-500 focus:outline-none ${
+                                    formData.propertyOwnership === 'even_split' ? 'bg-gray-50 text-gray-600' : ''
+                                  }`}
+                                  placeholder="50"
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Partner Share (%)
+                              </label>
+                              <div className="relative">
+                                <Percent className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  value={formData.partnerOwnershipPercent}
+                                  onChange={(e) => handleInputChange('partnerOwnershipPercent', e.target.value)}
+                                  disabled={formData.propertyOwnership === 'even_split'}
+                                  className={`w-full pl-6 pr-2 py-1.5 text-xs border border-gray-300 rounded-md focus:border-orange-500 focus:outline-none ${
+                                    formData.propertyOwnership === 'even_split' ? 'bg-gray-50 text-gray-600' : ''
+                                  }`}
+                                  placeholder="50"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Auto Tax Rate Display */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Marginal Tax Rate
+                          </label>
+                          <div className="relative">
+                            <Percent className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
+                            <input
+                              type="number"
+                              value={formData.marginalTaxRate}
+                              readOnly
+                              className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50 text-gray-600"
+                            />
+                          </div>
+                          <p className="text-xs text-orange-600 mt-1">Based on your annual income</p>
+                        </div>
+
+                      </div>
+                      <div className="text-xs text-orange-700 bg-orange-50 p-2 rounded-lg flex items-center gap-1">
+                        <Info className="h-3 w-3 flex-shrink-0" />
+                        <span>Your share of net rental income = Weekly rent × 52 × 80% × Your ownership %</span>
+                        <div className="relative inline-block">
+                          <button
+                            type="button"
+                            onMouseEnter={() => setShowRentalShadingTooltip(true)}
+                            onMouseLeave={() => setShowRentalShadingTooltip(false)}
+                            className="w-4 h-4 rounded-full bg-orange-400 text-white text-xs flex items-center justify-center hover:bg-orange-500 transition-colors"
+                          >
+                            ?
+                          </button>
+                          {showRentalShadingTooltip && (
+                            <div className="absolute bottom-full right-0 mb-2 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg z-30">
+                              <div className="font-medium mb-1">20% Rental Income Shading</div>
+                              <div>
+                                Lenders apply a 20% reduction to gross rental income to account for potential vacancies, maintenance costs, and property management fees.
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </motion.div>
+              )}
+
+              {/* Loan Settings - Collapsible */}
               <div className="border border-gray-200 rounded-lg">
                 <button
                   onClick={() => toggleSection('loanSettings')}
@@ -1133,7 +1412,7 @@ const BorrowingPowerEstimator = () => {
                 >
                   <div className="flex items-center space-x-2">
                     <Settings className="h-4 w-4 text-gray-600" />
-                    <span className="font-medium text-gray-700 text-sm">Advanced Settings</span>
+                    <span className="font-medium text-gray-700 text-sm">Loan Settings</span>
                   </div>
                   {expandedSections.loanSettings ? (
                     <ChevronUp className="h-4 w-4 text-gray-400" />
@@ -1232,80 +1511,6 @@ const BorrowingPowerEstimator = () => {
                 )}
               </div>
 
-              {/* Investment Property Details - Collapsible */}
-              {formData.propertyType === 'investment' && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  className="border border-orange-200 rounded-lg"
-                >
-                  <button
-                    onClick={() => toggleSection('investmentProperty')}
-                    className="w-full flex items-center justify-between p-3 text-left hover:bg-orange-50 transition-colors"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <Building className="h-4 w-4 text-orange-600" />
-                      <span className="font-medium text-orange-700 text-sm">Investment Details</span>
-                    </div>
-                    {expandedSections.investmentProperty ? (
-                      <ChevronUp className="h-4 w-4 text-orange-400" />
-                    ) : (
-                      <ChevronDown className="h-4 w-4 text-orange-400" />
-                    )}
-                  </button>
-                  
-                  {expandedSections.investmentProperty && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      className="px-3 pb-3 space-y-3 border-t border-orange-100"
-                    >
-                      <div className="grid grid-cols-1 gap-3">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Rental Yield (%)
-                          </label>
-                          <div className="relative">
-                            <Percent className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
-                            <input
-                              type="number"
-                              step="0.1"
-                              min="0"
-                              max="10"
-                              value={formData.expectedRentalYield}
-                              onChange={(e) => handleInputChange('expectedRentalYield', e.target.value)}
-                              className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none"
-                              placeholder="4.5"
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Tax Rate (%)
-                          </label>
-                          <div className="relative">
-                            <Percent className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
-                            <input
-                              type="number"
-                              step="0.5"
-                              min="0"
-                              max="47"
-                              value={formData.marginalTaxRate}
-                              onChange={(e) => handleInputChange('marginalTaxRate', e.target.value)}
-                              className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:border-orange-500 focus:outline-none"
-                              placeholder="32.5"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-xs text-orange-700 bg-orange-50 p-2 rounded-lg">
-                        <Info className="inline h-3 w-3 mr-1" />
-                        Investment properties have stricter lending criteria and rental income assessed at 80%.
-                      </div>
-                    </motion.div>
-                  )}
-                </motion.div>
-              )}
             </div>
           </motion.div>
 
@@ -1356,16 +1561,6 @@ const BorrowingPowerEstimator = () => {
                     </div>
                   )}
 
-                  {results.rentalExpense > 0 && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                      <div className="flex items-center space-x-2">
-                        <Info className="h-4 w-4 text-amber-600" />
-                        <p className="text-amber-800 text-sm">
-                          Post-purchase rent: {formatCurrency(results.rentalExpense)}/month
-                        </p>
-                      </div>
-                    </div>
-                  )}
 
                   {results.otherIncomeTotal > 0 && (
                     <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">

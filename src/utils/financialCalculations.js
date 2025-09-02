@@ -612,17 +612,31 @@ export const calculateBorrowingPower = (params) => {
     hecsBalance = 0,
     scenario = 'single', // 'single', 'couple'
     loanType = 'principal_interest', // 'principal_interest' or 'interest_only'
-    repaymentFrequency = 'monthly' // 'monthly', 'fortnightly', 'weekly'
+    repaymentFrequency = 'monthly', // 'monthly', 'fortnightly', 'weekly'
+    preCalculatedNetIncome = null // Allow passing pre-calculated net income
   } = params
 
-  // Calculate net income after tax for both incomes
-  const primaryNetIncome = calculateAustralianNetIncome(primaryIncome).netIncome
-  const secondaryNetIncome = secondaryIncome > 0 ? calculateAustralianNetIncome(secondaryIncome).netIncome : 0
-  const totalNetIncome = primaryNetIncome + secondaryNetIncome
-  const monthlyNetIncome = totalNetIncome / 12
+  // Use pre-calculated net income if provided, otherwise calculate from gross
+  let totalNetIncome, monthlyNetIncome, totalGrossIncome, primaryNetIncome, secondaryNetIncome
   
-  // Keep gross income for HECS calculation and display
-  const totalGrossIncome = primaryIncome + secondaryIncome
+  if (preCalculatedNetIncome) {
+    // Use pre-calculated net income (for investment property scenarios)
+    totalNetIncome = preCalculatedNetIncome
+    monthlyNetIncome = totalNetIncome / 12
+    totalGrossIncome = primaryIncome + secondaryIncome // For HECS calculation
+    
+    // For display purposes, approximate individual components
+    // (Note: This is an approximation since investment property affects total tax calculation)
+    primaryNetIncome = totalNetIncome // Most income attributed to primary
+    secondaryNetIncome = 0 // Secondary already included in preCalculated total
+  } else {
+    // Calculate net income after tax for both incomes (standard scenario)
+    primaryNetIncome = calculateAustralianNetIncome(primaryIncome).netIncome
+    secondaryNetIncome = secondaryIncome > 0 ? calculateAustralianNetIncome(secondaryIncome).netIncome : 0
+    totalNetIncome = primaryNetIncome + secondaryNetIncome
+    monthlyNetIncome = totalNetIncome / 12
+    totalGrossIncome = primaryIncome + secondaryIncome
+  }
 
   // Calculate HECS/HELP repayment based on gross income (as per ATO)
   const annualHECSPayment = hasHECS ? calculateHECSRepayment(totalGrossIncome) : 0
@@ -1197,7 +1211,8 @@ export const calculateMaxPurchasePrice = (maxLoan, deposit, params = {}) => {
     isFirstHomeBuyer = false,
     targetLVR = 80,
     legalFees = 1500,
-    inspectionFees = 500
+    inspectionFees = 500,
+    includeLMI = true
   } = params
 
   const availableFunds = maxLoan + deposit
@@ -1211,7 +1226,7 @@ export const calculateMaxPurchasePrice = (maxLoan, deposit, params = {}) => {
     const costs = calculateUpfrontCosts(maxPrice, maxLoan, {
       state,
       isFirstHomeBuyer,
-      includeLMI: calculateLVR(maxLoan, maxPrice) > 80,
+      includeLMI: includeLMI && (calculateLVR(maxLoan, maxPrice) > 80),
       legalFees,
       inspectionFees
     })
@@ -1227,7 +1242,7 @@ export const calculateMaxPurchasePrice = (maxLoan, deposit, params = {}) => {
   const finalCosts = calculateUpfrontCosts(maxPrice, maxLoan, {
     state,
     isFirstHomeBuyer,
-    includeLMI: calculateLVR(maxLoan, maxPrice) > 80,
+    includeLMI: includeLMI && (calculateLVR(maxLoan, maxPrice) > 80),
     legalFees,
     inspectionFees
   })
