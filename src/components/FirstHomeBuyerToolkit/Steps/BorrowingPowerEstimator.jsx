@@ -78,7 +78,7 @@ const BorrowingPowerEstimator = () => {
     loanType: data.loanType || 'principal_interest',
     repaymentFrequency: data.repaymentFrequency || 'monthly',
     termYears: data.termYears || 30,
-    interestRate: data.interestRate || 5.5,
+    interestRate: data.interestRate || (data.propertyType === 'investment' ? 5.8 : 5.5),
     
     // Investment Property Specific
     expectedRentalYield: data.expectedRentalYield || 4.5,
@@ -244,6 +244,11 @@ const BorrowingPowerEstimator = () => {
         newData.yourOwnershipPercent = 100 - numericValue
       }
       
+      // Update interest rate when property type changes
+      if (field === 'propertyType') {
+        newData.interestRate = value === 'investment' ? 5.8 : 5.5
+      }
+      
       return newData
     })
 
@@ -330,15 +335,20 @@ const BorrowingPowerEstimator = () => {
                               parseFloat(formData.yourOwnershipPercent) || 50
       grossRentalIncome = (grossAnnualRent * ownershipPercent) / 100
       
+      // For bank assessment, we'll apply 85% shading (captures vacancy and expenses)
+      const assessedRentalIncome = grossRentalIncome * 0.85
+      
       // Calculate investment property expenses and interest deductions
-      const interestRate = parseFloat(formData.interestRate) || 5.5
-      const estimatedPropertyValue = (weeklyRent * 52) / 0.035 // 3.5% yield assumption (more realistic)
+      // Use 5.8% for investment properties (market rate)
+      const investmentInterestRate = 5.8
+      const estimatedPropertyValue = (weeklyRent * 52) / 0.035 // 3.5% yield assumption
       const estimatedLoanAmount = estimatedPropertyValue * 0.8 // 80% LVR
-      const annualInterest = estimatedLoanAmount * (interestRate / 100)
-      const rentalExpenses = grossRentalIncome * 0.2 // 20% expenses
+      const annualInterest = estimatedLoanAmount * (investmentInterestRate / 100)
       
+      // For tax purposes, use actual expenses (20% of gross rental)
+      const rentalExpenses = grossRentalIncome * 0.2
       
-      // Calculate net taxable rental income
+      // Calculate net taxable rental income (for tax calculation)
       const netTaxableRentalIncome = grossRentalIncome - rentalExpenses - annualInterest
       
       // Calculate total taxable income
@@ -349,7 +359,8 @@ const BorrowingPowerEstimator = () => {
       const taxPayable = totalTaxableIncome - taxCalculationResult.netIncome
       
       // Calculate final net income: Gross Income - Tax Payable
-      const totalGrossIncome_All = totalGrossIncome + grossRentalIncome
+      // Use assessed rental income (85%) for final net income calculation
+      const totalGrossIncome_All = totalGrossIncome + assessedRentalIncome
       totalNetIncome = totalGrossIncome_All - taxPayable
       
       // Add gross rental to total gross for HECS calculation
@@ -403,6 +414,7 @@ const BorrowingPowerEstimator = () => {
     const enhancedResult = {
       ...result,
       totalAnnualIncome: totalGrossIncome,
+      totalNetIncome: totalNetIncome, // Already annual net income
       otherIncomeTotal,
       netRentalIncome: grossRentalIncome,
       grossRentalIncome,
@@ -1377,28 +1389,6 @@ const BorrowingPowerEstimator = () => {
                         </div>
 
                       </div>
-                      <div className="text-xs text-orange-700 bg-orange-50 p-2 rounded-lg flex items-center gap-1">
-                        <Info className="h-3 w-3 flex-shrink-0" />
-                        <span>Your share of net rental income = Weekly rent × 52 × 80% × Your ownership %</span>
-                        <div className="relative inline-block">
-                          <button
-                            type="button"
-                            onMouseEnter={() => setShowRentalShadingTooltip(true)}
-                            onMouseLeave={() => setShowRentalShadingTooltip(false)}
-                            className="w-4 h-4 rounded-full bg-orange-400 text-white text-xs flex items-center justify-center hover:bg-orange-500 transition-colors"
-                          >
-                            ?
-                          </button>
-                          {showRentalShadingTooltip && (
-                            <div className="absolute bottom-full right-0 mb-2 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg z-30">
-                              <div className="font-medium mb-1">20% Rental Income Shading</div>
-                              <div>
-                                Lenders apply a 20% reduction to gross rental income to account for potential vacancies, maintenance costs, and property management fees.
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
                     </motion.div>
                   )}
                 </motion.div>
@@ -1580,43 +1570,62 @@ const BorrowingPowerEstimator = () => {
                 <h4 className="font-semibold text-gray-900 mb-4">Calculation Breakdown</h4>
                 
                 <div className="space-y-3 text-sm">
+                  {/* Gross Income */}
                   {results.totalAnnualIncome && (
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Total Annual Income</span>
+                      <span className="text-gray-600">Gross Income (Annual)</span>
                       <span className="font-medium">{formatCurrency(results.totalAnnualIncome)}</span>
                     </div>
                   )}
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Monthly Surplus</span>
-                    <span className="font-medium">{formatCurrency(results.surplus)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Assessed Expenses</span>
-                    <span className="font-medium">{formatCurrency(results.assessedExpenses)}</span>
-                  </div>
-                  {results.rentalExpense > 0 && (
+                  
+                  {/* Monthly Net Income - show only for investment properties */}
+                  {formData.propertyType === 'investment' && parseFloat(formData.weeklyRent) > 0 && (
                     <div className="flex justify-between">
-                      <span className="text-gray-600">+ Rental Expense</span>
-                      <span className="font-medium">{formatCurrency(results.rentalExpense)}</span>
+                      <span className="text-gray-600">Monthly Net Income - with Investment Gearing</span>
+                      <span className="font-medium text-green-600">{formatCurrency(results.totalNetIncome / 12)}</span>
                     </div>
                   )}
-                  {results.hecsImpact > 0 && (
+                  
+                  <div className="border-t border-gray-200 pt-3 mt-3">
+                    <div className="text-xs font-medium text-gray-500 mb-2">Monthly Expenses</div>
+                    
+                    {/* Living Expenses */}
                     <div className="flex justify-between">
-                      <span className="text-gray-600">HECS/HELP Annual</span>
-                      <span className="font-medium">{formatCurrency(results.hecsImpact)}</span>
+                      <span className="text-gray-600 pl-2">Living Expenses</span>
+                      <span className="font-medium">{formatCurrency(results.assessedExpenses - (results.rentalExpense || 0))}</span>
                     </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Monthly Commitments</span>
-                    <span className="font-medium">{formatCurrency(totalMonthlyLiabilities + (results.hecsImpact || 0) / 12)}</span>
+                    
+                    {/* Rental Expense */}
+                    {results.rentalExpense > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-600 pl-2">+ Post-Purchase Rent</span>
+                        <span className="font-medium">{formatCurrency(results.rentalExpense)}</span>
+                      </div>
+                    )}
+                    
+                    {/* Monthly Liabilities */}
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 pl-2">+ Monthly Commitments</span>
+                      <span className="font-medium">{formatCurrency(totalMonthlyLiabilities + (results.hecsImpact || 0) / 12)}</span>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Debt-to-Income Ratio</span>
-                    <span className="font-medium">{results.dti.toFixed(1)}:1</span>
+                  
+                  {/* Monthly Surplus - highlighted */}
+                  <div className="flex justify-between bg-green-50 p-2 rounded-lg border border-green-200">
+                    <span className="text-green-700 font-medium">Monthly Surplus</span>
+                    <span className="font-bold text-green-600">{formatCurrency(results.surplus)}</span>
                   </div>
-                  <div className="flex justify-between border-t pt-2">
-                    <span className="text-gray-600">Assessment Rate</span>
-                    <span className="font-medium">{formatPercentage((formData.interestRate + 3) / 100)}</span>
+                  
+                  {/* Additional metrics */}
+                  <div className="border-t border-gray-200 pt-3 mt-3">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Debt-to-Income Ratio</span>
+                      <span className="font-medium">{results.dti.toFixed(1)}:1</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Assessment Rate</span>
+                      <span className="font-medium">{formatPercentage((formData.interestRate + 3) / 100)}</span>
+                    </div>
                   </div>
                 </div>
               </div>
