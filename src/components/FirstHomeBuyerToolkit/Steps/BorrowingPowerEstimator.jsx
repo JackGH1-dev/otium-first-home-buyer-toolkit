@@ -41,12 +41,18 @@ const BorrowingPowerEstimator = () => {
   const [errors, setErrors] = useState({})
   const [results, setResults] = useState(null)
   const [liabilities, setLiabilities] = useState([])
+  const [otherIncomes, setOtherIncomes] = useState([])
+  const [showIncomeDropdown, setShowIncomeDropdown] = useState(false)
   
   // Collapsible section states
   const [expandedSections, setExpandedSections] = useState({
     loanSettings: false,
-    investmentProperty: false
+    investmentProperty: false,
+    advancedOptions: false
   })
+  const [showHECS, setShowHECS] = useState(false)
+  const [useHEMBenchmark, setUseHEMBenchmark] = useState(false)
+  const [showHEMTooltip, setShowHEMTooltip] = useState(false)
 
   // Enhanced form state with all loan preferences
   const [formData, setFormData] = useState({
@@ -59,6 +65,11 @@ const BorrowingPowerEstimator = () => {
     hasHECS: data.hasHECS || false,
     hecsBalance: data.hecsBalance || '',
     monthlyLiabilities: data.monthlyLiabilities || 0,
+    postcode: data.postcode || '',
+    postPurchaseLiving: data.postPurchaseLiving || 'own-property',
+    weeklyRentBoard: data.weeklyRentBoard || '',
+    primaryHECSBalance: data.primaryHECSBalance || '',
+    secondaryHECSBalance: data.secondaryHECSBalance || '',
     
     // Loan Preferences
     propertyType: data.propertyType || 'owner-occupied', // 'owner-occupied' or 'investment'
@@ -106,14 +117,59 @@ const BorrowingPowerEstimator = () => {
           [field]: ['monthlyPayment', 'balance', 'creditLimit'].includes(field) ? parseFloat(value) || 0 : value
         }
         
-        // Auto-calculate monthly payment for credit cards based on 3.8% of limit
+        // Auto-calculate monthly payment for credit cards based on 3.5% of limit  
         if (liability.type === 'credit_card' && field === 'creditLimit') {
-          updatedLiability.monthlyPayment = (parseFloat(value) || 0) * 0.038
+          updatedLiability.monthlyPayment = (parseFloat(value) || 0) * 0.035
         }
         
         return updatedLiability
       }
       return liability
+    }))
+  }
+
+  // Income types configuration
+  const INCOME_TYPES = [
+    { id: 'bonus', label: 'Bonus', shadingRate: 0.8, comingSoon: false },
+    { id: 'commission', label: 'Commission', shadingRate: 0.8, comingSoon: false },
+    { id: 'overtime', label: 'Overtime', shadingRate: 0.8, comingSoon: false },
+    { id: 'allowances', label: 'Allowances', shadingRate: 0.8, comingSoon: false },
+    { id: 'rental', label: 'Rental Income', shadingRate: 0.8, comingSoon: false },
+    { id: 'self-employed', label: 'Self-Employment', shadingRate: 0.7, comingSoon: true },
+    { id: 'government-benefits', label: 'Government Benefits', shadingRate: 1.0, comingSoon: true },
+    { id: 'investment-income', label: 'Investment Income', shadingRate: 1.0, comingSoon: true }
+  ]
+
+  // Other income management functions
+  const addOtherIncome = (type) => {
+    const incomeType = INCOME_TYPES.find(t => t.id === type)
+    if (!incomeType || incomeType.comingSoon) return
+    
+    const newIncome = {
+      id: Date.now(),
+      type,
+      label: incomeType.label,
+      amount: '',
+      frequency: 'annual',
+      shadingRate: incomeType.shadingRate
+    }
+    setOtherIncomes(prev => [...prev, newIncome])
+    setShowIncomeDropdown(false)
+  }
+
+  const removeOtherIncome = (id) => {
+    setOtherIncomes(prev => prev.filter(income => income.id !== id))
+  }
+
+  const updateOtherIncome = (id, field, value) => {
+    setOtherIncomes(prev => prev.map(income => {
+      if (income.id === id) {
+        return {
+          ...income,
+          [field]: ['amount'].includes(field) ? parseFloat(value) || 0 : value
+        }
+      }
+      return income
     }))
   }
 
@@ -152,28 +208,48 @@ const BorrowingPowerEstimator = () => {
       }))
     }
 
-    // Auto-set HEM benchmark when scenario, income, or dependents change
-    if (field === 'scenario' || field === 'primaryIncome' || field === 'dependents') {
-      const totalIncome = field === 'primaryIncome' ? numericValue : formData.primaryIncome
+    // Auto-set HEM benchmark when checkbox is ticked and relevant inputs change
+    if (useHEMBenchmark && (field === 'scenario' || field === 'primaryIncome' || field === 'secondaryIncome' || field === 'dependents')) {
+      const totalIncome = field === 'primaryIncome' ? numericValue : 
+                         field === 'secondaryIncome' ? (formData.primaryIncome || 0) + numericValue :
+                         (formData.primaryIncome || 0) + (formData.secondaryIncome || 0)
       const scenario = field === 'scenario' ? value : formData.scenario
       const dependents = field === 'dependents' ? numericValue : formData.dependents
       
       if (totalIncome > 0) {
         const hemBenchmark = calculateHEMExpenses(scenario, totalIncome, dependents)
         
-        // Auto-fill living expenses if not already set or if lower than HEM
-        if (!formData.monthlyLivingExpenses || formData.monthlyLivingExpenses < hemBenchmark) {
-          setFormData(prev => ({
-            ...prev,
-            [field]: numericValue,
-            monthlyLivingExpenses: hemBenchmark
-          }))
-        }
+        setFormData(prev => ({
+          ...prev,
+          [field]: numericValue,
+          monthlyLivingExpenses: hemBenchmark
+        }))
+        return
       }
     }
   }
 
-  // Calculate borrowing power
+  // Calculate rental expense for post-purchase living
+  const calculateRentalExpense = (postPurchaseLiving, weeklyRentBoard) => {
+    if (postPurchaseLiving === 'own-property') return 0
+    
+    const NOTIONAL_RENT_WEEKLY = 150 // Minimum lender assessment
+    const userWeeklyAmount = parseFloat(weeklyRentBoard) || 0
+    const weeklyRent = Math.max(userWeeklyAmount, NOTIONAL_RENT_WEEKLY)
+    
+    return weeklyRent * 52 / 12 // Convert to monthly
+  }
+
+  // Calculate total other income with shading
+  const calculateOtherIncomeTotal = () => {
+    return otherIncomes.reduce((sum, income) => {
+      const amount = parseFloat(income.amount) || 0
+      const annualAmount = income.frequency === 'monthly' ? amount * 12 : amount
+      return sum + (annualAmount * income.shadingRate)
+    }, 0)
+  }
+
+  // Enhanced borrowing power calculation
   const calculateResults = () => {
     // Validate inputs
     const validationErrors = validateFinancialInputs({
@@ -187,43 +263,87 @@ const BorrowingPowerEstimator = () => {
       return
     }
 
+    // 1. Calculate total income (with shading for other income)
+    const primaryIncome = parseFloat(formData.primaryIncome) || 0
+    const secondaryIncome = formData.scenario === 'couple' ? parseFloat(formData.secondaryIncome) || 0 : 0
+    const otherIncomeTotal = calculateOtherIncomeTotal()
+    const totalAnnualIncome = primaryIncome + secondaryIncome + otherIncomeTotal
+
+    // 2. Calculate HECS repayments for each applicant
+    const primaryHECS = formData.primaryHECSBalance > 0 ? calculateHECSRepayment(primaryIncome) : 0
+    const secondaryHECS = formData.scenario === 'couple' && formData.secondaryHECSBalance > 0 
+      ? calculateHECSRepayment(secondaryIncome) : 0
+    const totalAnnualHECS = primaryHECS + secondaryHECS
+
+    // 3. Calculate post-purchase rental expense
+    const rentalExpense = calculateRentalExpense(formData.postPurchaseLiving, formData.weeklyRentBoard)
+    
+    // 4. Enhanced base parameters
     const baseParams = {
-      primaryIncome: formData.primaryIncome,
-      secondaryIncome: formData.scenario === 'couple' ? formData.secondaryIncome : 0,
+      primaryIncome: totalAnnualIncome, // Use total income including other sources
+      secondaryIncome: 0, // Already included in primaryIncome
       existingDebts: 0,
-      livingExpenses: formData.monthlyLivingExpenses,
-      monthlyLiabilities: formData.monthlyLiabilities || 0,
+      livingExpenses: (parseFloat(formData.monthlyLivingExpenses) || 0) + rentalExpense,
+      monthlyLiabilities: totalMonthlyLiabilities + (totalAnnualHECS / 12), // Include HECS
       interestRate: formData.interestRate / 100,
       termYears: formData.termYears,
       dependents: formData.dependents,
-      hasHECS: formData.hasHECS,
-      hecsBalance: formData.hecsBalance,
+      hasHECS: totalAnnualHECS > 0,
+      hecsBalance: (parseFloat(formData.primaryHECSBalance) || 0) + (parseFloat(formData.secondaryHECSBalance) || 0),
       scenario: formData.scenario,
       loanType: formData.loanType,
-      repaymentFrequency: formData.repaymentFrequency
+      repaymentFrequency: formData.repaymentFrequency,
+      // Enhanced details
+      otherIncomeTotal,
+      rentalExpense,
+      totalAnnualHECS
     }
 
     const result = calculateBorrowingPower(baseParams)
-    setResults(result)
+    
+    // Add enhanced details to results
+    const enhancedResult = {
+      ...result,
+      totalAnnualIncome,
+      otherIncomeTotal,
+      rentalExpense,
+      hecsImpact: totalAnnualHECS,
+      details: {
+        primaryIncome,
+        secondaryIncome,
+        otherIncomeTotal,
+        monthlyExpenses: parseFloat(formData.monthlyLivingExpenses) || 0,
+        rentalExpense,
+        hecsRepayment: totalAnnualHECS,
+        monthlyLiabilities: totalMonthlyLiabilities
+      }
+    }
+    
+    setResults(enhancedResult)
 
-    // Save data to context
+    // Save data to context with enhanced fields
     setData({
       ...formData,
-      maxLoan: result.maxLoan,
-      surplus: result.surplus,
-      dti: result.dti,
-      assessedExpenses: result.assessedExpenses,
-      hemBenchmark: result.hemBenchmark,
-      hecsImpact: result.hecsImpact
+      otherIncomes,
+      maxLoan: enhancedResult.maxLoan,
+      surplus: enhancedResult.surplus,
+      dti: enhancedResult.dti,
+      assessedExpenses: enhancedResult.assessedExpenses,
+      hemBenchmark: enhancedResult.hemBenchmark,
+      hecsImpact: enhancedResult.hecsImpact,
+      totalAnnualIncome: enhancedResult.totalAnnualIncome,
+      rentalExpense: enhancedResult.rentalExpense
     })
 
     updateCalculations({
-      maxLoan: result.maxLoan,
-      surplus: result.surplus,
-      dti: result.dti,
-      assessedExpenses: result.assessedExpenses,
-      hemBenchmark: result.hemBenchmark,
-      hecsImpact: result.hecsImpact
+      maxLoan: enhancedResult.maxLoan,
+      surplus: enhancedResult.surplus,
+      dti: enhancedResult.dti,
+      assessedExpenses: enhancedResult.assessedExpenses,
+      hemBenchmark: enhancedResult.hemBenchmark,
+      hecsImpact: enhancedResult.hecsImpact,
+      totalAnnualIncome: enhancedResult.totalAnnualIncome,
+      rentalExpense: enhancedResult.rentalExpense
     })
   }
 
@@ -233,7 +353,21 @@ const BorrowingPowerEstimator = () => {
       const timer = setTimeout(calculateResults, 500)
       return () => clearTimeout(timer)
     }
-  }, [formData])
+  }, [formData, otherIncomes, liabilities])
+
+  // Auto-update HEM when checkbox is ticked and inputs change
+  useEffect(() => {
+    if (useHEMBenchmark && (formData.primaryIncome > 0 || formData.secondaryIncome > 0)) {
+      const totalIncome = (formData.primaryIncome || 0) + (formData.secondaryIncome || 0)
+      const hemBenchmark = calculateHEMExpenses(formData.scenario, totalIncome, formData.dependents)
+      if (formData.monthlyLivingExpenses !== hemBenchmark) {
+        setFormData(prev => ({
+          ...prev,
+          monthlyLivingExpenses: hemBenchmark
+        }))
+      }
+    }
+  }, [useHEMBenchmark, formData.scenario, formData.primaryIncome, formData.secondaryIncome, formData.dependents])
 
   // Load existing results
   useEffect(() => {
@@ -276,28 +410,25 @@ const BorrowingPowerEstimator = () => {
           </div>
 
           <div className="space-y-6">
-            {/* Scenario Selection - Moved here for better space usage */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <h4 className="text-sm font-semibold text-blue-700 mb-3">Your Situation</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Scenario Selection - Compact Design */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-3">Your Situation</label>
+              <div className="grid grid-cols-2 gap-2">
                 {[
-                  { value: 'single', label: 'Single Person', icon: '👤', desc: 'Individual home buyer' },
-                  { value: 'couple', label: 'Couple', icon: '👫', desc: 'Two income earners' }
+                  { value: 'single', label: 'Single Person', icon: '👤' },
+                  { value: 'couple', label: 'Couple', icon: '👫' }
                 ].map((scenario) => (
                   <button
                     key={scenario.value}
                     onClick={() => handleInputChange('scenario', scenario.value)}
-                    className={`p-3 rounded-lg border-2 transition-all text-center ${
+                    className={`p-2 rounded-lg border transition-all text-center text-sm ${
                       formData.scenario === scenario.value
-                        ? 'bg-blue-100 border-blue-500 text-blue-800'
-                        : 'bg-white border-blue-200 text-blue-700 hover:border-blue-400 hover:bg-blue-50'
+                        ? 'bg-blue-100 border-blue-500 text-blue-700 font-medium'
+                        : 'bg-white border-gray-200 text-gray-600 hover:border-blue-300 hover:bg-blue-50'
                     }`}
                   >
-                    <div className="space-y-1">
-                      <div className="text-lg">{scenario.icon}</div>
-                      <div className="font-semibold text-sm">{scenario.label}</div>
-                      <div className="text-xs opacity-75">{scenario.desc}</div>
-                    </div>
+                    <span className="mr-1">{scenario.icon}</span>
+                    {scenario.label}
                   </button>
                 ))}
               </div>
@@ -329,6 +460,7 @@ const BorrowingPowerEstimator = () => {
                 )}
               </div>
             </div>
+
 
             {/* Secondary Income (Couple only) */}
             {formData.scenario === 'couple' && (
@@ -362,6 +494,116 @@ const BorrowingPowerEstimator = () => {
               </motion.div>
             )}
 
+            {/* Other Income Sources - Only show when there are income sources OR add button */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <label className="block text-sm font-semibold text-gray-700">
+                  Other Income Sources
+                </label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowIncomeDropdown(!showIncomeDropdown)}
+                    className="flex items-center space-x-1 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <Plus className="h-3 w-3" />
+                    <span>Add Income</span>
+                  </button>
+                  
+                  {showIncomeDropdown && (
+                    <div className="absolute right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg z-20 min-w-48">
+                      <div className="p-2">
+                        {INCOME_TYPES.map(type => (
+                          <button
+                            key={type.id}
+                            onClick={() => addOtherIncome(type.id)}
+                            disabled={type.comingSoon}
+                            className={`block w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-50 transition-colors ${
+                              type.comingSoon ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700'
+                            }`}
+                          >
+                            {type.label}
+                            {type.comingSoon && <span className="text-gray-400 ml-2">(Coming Soon)</span>}
+                            {!type.comingSoon && <span className="text-blue-600 ml-2 text-xs">({(type.shadingRate * 100)}% assessed)</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Only show content area if there are other incomes */}
+              {otherIncomes.length > 0 && (
+                <div className="space-y-3">
+                  {otherIncomes.map((income) => (
+                    <div key={income.id} className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center space-x-2">
+                          <span className="inline-flex items-center px-2 py-1 bg-blue-600 text-white text-xs font-medium rounded">
+                            {income.label}
+                          </span>
+                          <span className="text-xs text-blue-700 bg-blue-100 px-2 py-1 rounded">
+                            {(income.shadingRate * 100)}% assessed
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeOtherIncome(income.id)}
+                          className="text-gray-400 hover:text-red-500 transition-colors"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">
+                            Amount
+                          </label>
+                          <div className="relative">
+                            <DollarSign className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
+                            <input
+                              type="number"
+                              value={income.amount}
+                              onChange={(e) => updateOtherIncome(income.id, 'amount', e.target.value)}
+                              className="w-full pl-6 pr-3 py-2 text-sm border border-gray-300 rounded-md focus:border-blue-500 focus:outline-none"
+                              placeholder="10000"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">
+                            Frequency
+                          </label>
+                          <select
+                            value={income.frequency}
+                            onChange={(e) => updateOtherIncome(income.id, 'frequency', e.target.value)}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:border-blue-500 focus:outline-none"
+                          >
+                            <option value="annual">Annual</option>
+                            <option value="monthly">Monthly</option>
+                          </select>
+                        </div>
+                      </div>
+                      
+                      {income.amount > 0 && (
+                        <div className="mt-2 text-xs text-blue-700">
+                          Assessed value: {formatCurrency(
+                            (income.frequency === 'monthly' ? income.amount * 12 : income.amount) * income.shadingRate
+                          )}/year
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  
+                  <p className="text-xs text-gray-500 mt-2">
+                    Additional income is assessed at reduced rates for lending purposes
+                  </p>
+                </div>
+              )}
+            </div>
+
             {/* Dependents */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -384,6 +626,24 @@ const BorrowingPowerEstimator = () => {
               </p>
             </div>
 
+            {/* Postcode for HEM */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                📍 Your Current Postcode
+              </label>
+              <input
+                type="text"
+                value={formData.postcode}
+                onChange={(e) => handleInputChange('postcode', e.target.value)}
+                className="w-32 px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none transition-colors"
+                placeholder="2000"
+                maxLength="4"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Used for location-based living expense calculations
+              </p>
+            </div>
+
             {/* Monthly Living Expenses */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -399,31 +659,142 @@ const BorrowingPowerEstimator = () => {
                   placeholder="3800"
                 />
               </div>
-              <div className="flex justify-between items-center mt-1">
-                <p className="text-xs text-gray-500">
-                  Include rent, food, transport, utilities, insurance, etc.
-                </p>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <p className="text-xs text-gray-500">
+                    Include food, transport, utilities, insurance, entertainment, etc.
+                  </p>
+                </div>
+                
                 {(formData.primaryIncome > 0 || formData.secondaryIncome > 0) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const totalIncome = (formData.primaryIncome || 0) + (formData.secondaryIncome || 0)
-                      const hemBenchmark = calculateHEMExpenses(formData.scenario, totalIncome, formData.dependents)
-                      handleInputChange('monthlyLivingExpenses', hemBenchmark)
-                    }}
-                    className="text-xs text-blue-600 hover:text-blue-700 font-medium"
-                  >
-                    Use HEM Benchmark
-                  </button>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id="useHEM"
+                        checked={useHEMBenchmark}
+                        onChange={(e) => {
+                          setUseHEMBenchmark(e.target.checked)
+                          if (e.target.checked) {
+                            const totalIncome = (formData.primaryIncome || 0) + (formData.secondaryIncome || 0)
+                            const hemBenchmark = calculateHEMExpenses(formData.scenario, totalIncome, formData.dependents)
+                            handleInputChange('monthlyLivingExpenses', hemBenchmark)
+                          }
+                        }}
+                        className="w-3 h-3 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <label htmlFor="useHEM" className="text-xs text-blue-600 font-medium">
+                        Use HEM Benchmark
+                      </label>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onMouseEnter={() => setShowHEMTooltip(true)}
+                          onMouseLeave={() => setShowHEMTooltip(false)}
+                          className="w-4 h-4 rounded-full bg-gray-300 text-white text-xs flex items-center justify-center hover:bg-gray-400 transition-colors"
+                        >
+                          ?
+                        </button>
+                        {showHEMTooltip && (
+                          <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-64 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg z-30">
+                            <div className="font-medium mb-1">HEM Benchmark</div>
+                            <div>
+                              Household Expenditure Measure - Australian government data on typical household spending patterns based on income, dependents, and location. Used by lenders as a minimum expense assessment.
+                            </div>
+                            <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
 
-            {/* Monthly Liabilities - Individual Debt Management */}
+
+            {/* HECS/HELP Debt Section - Checkbox Design */}
+            <div>
+              <div className="flex items-center space-x-2 mb-3">
+                <input
+                  type="checkbox"
+                  id="hasHECS"
+                  checked={showHECS || formData.primaryHECSBalance > 0 || formData.secondaryHECSBalance > 0}
+                  onChange={(e) => {
+                    setShowHECS(e.target.checked)
+                    if (!e.target.checked) {
+                      handleInputChange('primaryHECSBalance', '')
+                      handleInputChange('secondaryHECSBalance', '')
+                    }
+                  }}
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <label htmlFor="hasHECS" className="text-sm font-semibold text-gray-700">
+                  I have HECS/HELP debt
+                </label>
+              </div>
+              
+              {(showHECS || formData.primaryHECSBalance > 0 || formData.secondaryHECSBalance > 0) && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 space-y-4"
+                >
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {formData.scenario === 'couple' ? 'Primary Applicant' : 'HECS/HELP'} Balance
+                    </label>
+                    <div className="relative">
+                      <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <input
+                        type="number"
+                        value={formData.primaryHECSBalance}
+                        onChange={(e) => handleInputChange('primaryHECSBalance', e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                        placeholder="25000"
+                      />
+                    </div>
+                    {formData.primaryHECSBalance > 0 && formData.primaryIncome > 0 && (
+                      <p className="text-xs text-yellow-700 mt-1">
+                        Annual repayment: {formatCurrency(calculateHECSRepayment(formData.primaryIncome))}
+                      </p>
+                    )}
+                  </div>
+                  
+                  {formData.scenario === 'couple' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Secondary Applicant Balance
+                      </label>
+                      <div className="relative">
+                        <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <input
+                          type="number"
+                          value={formData.secondaryHECSBalance}
+                          onChange={(e) => handleInputChange('secondaryHECSBalance', e.target.value)}
+                          className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                          placeholder="25000"
+                        />
+                      </div>
+                      {formData.secondaryHECSBalance > 0 && formData.secondaryIncome > 0 && (
+                        <p className="text-xs text-yellow-700 mt-1">
+                          Annual repayment: {formatCurrency(calculateHECSRepayment(formData.secondaryIncome))}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  
+                  <p className="text-xs text-gray-600">
+                    HECS repayments are calculated automatically based on individual incomes
+                  </p>
+                </motion.div>
+              )}
+            </div>
+
+            {/* Other Commitments & Liabilities */}
             <div>
               <div className="flex items-center justify-between mb-3">
                 <label className="block text-sm font-semibold text-gray-700">
-                  Monthly Debt Repayments
+                  Other Monthly Commitments
                 </label>
                 <button
                   type="button"
@@ -431,15 +802,15 @@ const BorrowingPowerEstimator = () => {
                   className="flex items-center space-x-1 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
                 >
                   <Plus className="h-3 w-3" />
-                  <span>Add Liability</span>
+                  <span>Add Commitment</span>
                 </button>
               </div>
 
               {liabilities.length === 0 ? (
                 <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
                   <CreditCard className="h-8 w-8 mx-auto mb-2 text-gray-400" />
-                  <p className="text-sm text-gray-500 mb-2">No current debt repayments</p>
-                  <p className="text-xs text-gray-400">Click "Add Liability" to include credit cards, loans, or other debts</p>
+                  <p className="text-sm text-gray-500 mb-2">No other commitments</p>
+                  <p className="text-xs text-gray-400">Add credit cards, loans, BNPL, or other debts</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -450,6 +821,8 @@ const BorrowingPowerEstimator = () => {
                           {liability.type === 'credit_card' && <CreditCard className="h-4 w-4 text-red-500" />}
                           {liability.type === 'personal_loan' && <DollarSign className="h-4 w-4 text-orange-500" />}
                           {liability.type === 'car_loan' && <Car className="h-4 w-4 text-blue-500" />}
+                          {liability.type === 'bnpl' && <span className="text-sm">📱</span>}
+                          {liability.type === 'other_mortgage' && <Home className="h-4 w-4 text-green-500" />}
                           {liability.type === 'other' && <Settings className="h-4 w-4 text-gray-500" />}
                           <select
                             value={liability.type}
@@ -459,7 +832,9 @@ const BorrowingPowerEstimator = () => {
                             <option value="credit_card">Credit Card</option>
                             <option value="personal_loan">Personal Loan</option>
                             <option value="car_loan">Car Loan</option>
-                            <option value="other">Other Debt</option>
+                            <option value="bnpl">Buy Now Pay Later (BNPL)</option>
+                            <option value="other_mortgage">Other Mortgage</option>
+                            <option value="other">Other Commitment</option>
                           </select>
                         </div>
                         <button
@@ -481,7 +856,13 @@ const BorrowingPowerEstimator = () => {
                             value={liability.description}
                             onChange={(e) => updateLiability(liability.id, 'description', e.target.value)}
                             className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:border-blue-500 focus:outline-none"
-                            placeholder={liability.type === 'credit_card' ? 'Westpac Credit Card' : liability.type === 'car_loan' ? 'Toyota Camry' : 'Description'}
+                            placeholder={
+                              liability.type === 'credit_card' ? 'Westpac Credit Card' :
+                              liability.type === 'car_loan' ? 'Toyota Camry' :
+                              liability.type === 'bnpl' ? 'Afterpay/Zip' :
+                              liability.type === 'other_mortgage' ? 'Investment Property' :
+                              'Description'
+                            }
                           />
                         </div>
                         {liability.type === 'credit_card' ? (
@@ -515,7 +896,7 @@ const BorrowingPowerEstimator = () => {
                                   placeholder="Auto-calculated"
                                 />
                               </div>
-                              <p className="text-xs text-gray-500 mt-1">3.8% of credit limit</p>
+                              <p className="text-xs text-gray-500 mt-1">3.5% of credit limit</p>
                             </div>
                           </>
                         ) : (
@@ -537,14 +918,14 @@ const BorrowingPowerEstimator = () => {
                             </div>
                             <div>
                               <label className="block text-xs font-medium text-gray-600 mb-1">
-                                Total Balance (Optional)
+                                {liability.type === 'credit_card' ? 'Credit Limit' : 'Total Balance'} (Optional)
                               </label>
                               <div className="relative">
                                 <DollarSign className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
                                 <input
                                   type="number"
-                                  value={liability.balance}
-                                  onChange={(e) => updateLiability(liability.id, 'balance', e.target.value)}
+                                  value={liability.type === 'credit_card' ? liability.creditLimit : liability.balance}
+                                  onChange={(e) => updateLiability(liability.id, liability.type === 'credit_card' ? 'creditLimit' : 'balance', e.target.value)}
                                   className="w-full pl-6 pr-3 py-2 text-sm border border-gray-300 rounded-md focus:border-blue-500 focus:outline-none"
                                   placeholder="0"
                                 />
@@ -557,64 +938,79 @@ const BorrowingPowerEstimator = () => {
                   ))}
                   
                   {/* Total Summary */}
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-blue-700">Total Monthly Repayments</span>
-                      <span className="text-lg font-bold text-blue-600">{formatCurrency(totalMonthlyLiabilities)}</span>
+                      <span className="text-sm font-medium text-red-700">Total Monthly Commitments</span>
+                      <span className="text-lg font-bold text-red-600">{formatCurrency(totalMonthlyLiabilities)}</span>
                     </div>
                   </div>
                 </div>
               )}
               
               <p className="text-xs text-gray-500 mt-2">
-                Include all debt repayments except HECS/HELP (calculated separately)
+                Include all monthly commitments - HECS repayments calculated separately above
               </p>
             </div>
 
-            {/* HECS/HELP Debt Section */}
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-3">
+            {/* Advanced Options - Progressive Disclosure */}
+            <div className="border border-gray-200 rounded-lg mt-6">
+              <button
+                onClick={() => toggleSection('advancedOptions')}
+                className="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors"
+              >
                 <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    id="hasHECS"
-                    checked={formData.hasHECS}
-                    onChange={(e) => handleInputChange('hasHECS', e.target.checked)}
-                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                  />
-                  <label htmlFor="hasHECS" className="text-sm font-semibold text-gray-700">
-                    I have HECS/HELP debt
-                  </label>
+                  <Settings className="h-4 w-4 text-blue-600" />
+                  <span className="font-medium text-blue-700">Show Advanced Options</span>
                 </div>
-                {formData.hasHECS && (formData.primaryIncome > 0 || formData.secondaryIncome > 0) && (
-                  <div className="text-xs text-yellow-700">
-                    Est. annual: {formatCurrency(calculateHECSRepayment((formData.primaryIncome || 0) + (formData.secondaryIncome || 0)))}
-                  </div>
+                {expandedSections.advancedOptions ? (
+                  <ChevronUp className="h-4 w-4 text-gray-400" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-gray-400" />
                 )}
-              </div>
+              </button>
               
-              {formData.hasHECS && (
+              {expandedSections.advancedOptions && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="px-4 pb-4 space-y-4 border-t border-gray-100"
                 >
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      HECS/HELP Balance (Optional)
-                    </label>
-                    <div className="relative">
-                      <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      <input
-                        type="number"
-                        value={formData.hecsBalance}
-                        onChange={(e) => handleInputChange('hecsBalance', e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                        placeholder="25000"
-                      />
+                  {/* Future: Assets & Savings */}
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-medium text-gray-700">Assets & Savings</h4>
+                        <p className="text-sm text-gray-500">Deposit source, existing property value</p>
+                      </div>
+                      <span className="text-xs text-gray-400 bg-gray-200 px-2 py-1 rounded">Coming Soon</span>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">
-                      HECS repayments are calculated automatically based on your income
-                    </p>
+                  </div>
+
+                  {/* Future: Risk Assessment */}
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-medium text-gray-700">Risk Assessment</h4>
+                        <p className="text-sm text-gray-500">Stress testing, job security factors</p>
+                      </div>
+                      <span className="text-xs text-gray-400 bg-gray-200 px-2 py-1 rounded">Coming Soon</span>
+                    </div>
+                  </div>
+
+                  {/* Future: Guarantor Support */}
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-medium text-gray-700">Family Guarantee</h4>
+                        <p className="text-sm text-gray-500">Parent/family guarantee scenarios</p>
+                      </div>
+                      <span className="text-xs text-gray-400 bg-gray-200 px-2 py-1 rounded">Coming Soon</span>
+                    </div>
+                  </div>
+                  
+                  <div className="text-xs text-blue-600 text-center pt-2">
+                    💡 These advanced features are in development and will be available soon
                   </div>
                 </motion.div>
               )}
@@ -675,6 +1071,58 @@ const BorrowingPowerEstimator = () => {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* Post-Purchase Living Situation */}
+              <div className="border-t border-gray-200 pt-4 mt-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-3">
+                  After this purchase, you will be:
+                </label>
+                <select
+                  value={formData.postPurchaseLiving}
+                  onChange={(e) => handleInputChange('postPurchaseLiving', e.target.value)}
+                  className="w-full p-2 text-sm border border-gray-300 rounded-lg mb-3 focus:border-purple-500 focus:outline-none"
+                >
+                  {formData.propertyType === 'owner-occupied' ? (
+                    <>
+                      <option value="own-property">Living in the purchased property</option>
+                      <option value="renting">Renting elsewhere</option>
+                      <option value="parents">Living with parents/family</option>
+                      <option value="other">Other arrangement</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="renting">Renting elsewhere</option>
+                      <option value="parents">Living with parents/family</option>
+                      <option value="other">Other arrangement</option>
+                    </>
+                  )}
+                </select>
+                
+                {formData.postPurchaseLiving !== 'own-property' && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="bg-amber-50 border border-amber-200 rounded-lg p-3"
+                  >
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Weekly rent/board payment:
+                    </label>
+                    <div className="relative">
+                      <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3 w-3 text-gray-400" />
+                      <input
+                        type="number"
+                        value={formData.weeklyRentBoard}
+                        onChange={(e) => handleInputChange('weeklyRentBoard', e.target.value)}
+                        className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                        placeholder="350"
+                      />
+                    </div>
+                    <p className="text-xs text-amber-700 mt-2">
+                      💡 Lenders use minimum $150/week for assessment purposes
+                    </p>
+                  </motion.div>
+                )}
               </div>
 
               {/* Advanced Loan Settings - Collapsible */}
@@ -871,17 +1319,17 @@ const BorrowingPowerEstimator = () => {
           {results ? (
             <>
               {/* Main Result */}
-              <div className="bg-gradient-to-br from-blue-50 to-indigo-100 rounded-2xl p-8 shadow-xl border-2 border-blue-200">
+              <div className="bg-gradient-to-br from-green-50 to-emerald-100 rounded-2xl p-8 shadow-xl border-2 border-green-200">
                 <div className="text-center space-y-4">
-                  <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-600 rounded-xl">
+                  <div className="inline-flex items-center justify-center w-12 h-12 bg-green-600 rounded-xl">
                     <TrendingUp className="h-6 w-6 text-white" />
                   </div>
                   
                   <div>
-                    <h3 className="text-lg font-semibold text-blue-900 mb-2">
+                    <h3 className="text-lg font-semibold text-green-900 mb-2">
                       Estimated Borrowing Power
                     </h3>
-                    <div className="text-4xl font-bold text-blue-600">
+                    <div className="text-4xl font-bold text-green-600">
                       {formatCurrency(results.maxLoan)}
                     </div>
                   </div>
@@ -907,6 +1355,28 @@ const BorrowingPowerEstimator = () => {
                       </div>
                     </div>
                   )}
+
+                  {results.rentalExpense > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                      <div className="flex items-center space-x-2">
+                        <Info className="h-4 w-4 text-amber-600" />
+                        <p className="text-amber-800 text-sm">
+                          Post-purchase rent: {formatCurrency(results.rentalExpense)}/month
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {results.otherIncomeTotal > 0 && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                      <div className="flex items-center space-x-2">
+                        <Info className="h-4 w-4 text-emerald-600" />
+                        <p className="text-emerald-800 text-sm">
+                          Other income assessed: {formatCurrency(results.otherIncomeTotal)}/year
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -915,6 +1385,12 @@ const BorrowingPowerEstimator = () => {
                 <h4 className="font-semibold text-gray-900 mb-4">Calculation Breakdown</h4>
                 
                 <div className="space-y-3 text-sm">
+                  {results.totalAnnualIncome && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Total Annual Income</span>
+                      <span className="font-medium">{formatCurrency(results.totalAnnualIncome)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-gray-600">Monthly Surplus</span>
                     <span className="font-medium">{formatCurrency(results.surplus)}</span>
@@ -923,12 +1399,22 @@ const BorrowingPowerEstimator = () => {
                     <span className="text-gray-600">Assessed Expenses</span>
                     <span className="font-medium">{formatCurrency(results.assessedExpenses)}</span>
                   </div>
+                  {results.rentalExpense > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">+ Rental Expense</span>
+                      <span className="font-medium">{formatCurrency(results.rentalExpense)}</span>
+                    </div>
+                  )}
                   {results.hecsImpact > 0 && (
                     <div className="flex justify-between">
                       <span className="text-gray-600">HECS/HELP Annual</span>
                       <span className="font-medium">{formatCurrency(results.hecsImpact)}</span>
                     </div>
                   )}
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Monthly Commitments</span>
+                    <span className="font-medium">{formatCurrency(totalMonthlyLiabilities + (results.hecsImpact || 0) / 12)}</span>
+                  </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Debt-to-Income Ratio</span>
                     <span className="font-medium">{results.dti.toFixed(1)}:1</span>
