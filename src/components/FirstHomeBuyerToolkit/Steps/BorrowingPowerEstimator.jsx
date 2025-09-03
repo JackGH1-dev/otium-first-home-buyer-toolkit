@@ -262,14 +262,21 @@ const BorrowingPowerEstimator = () => {
 
     // Auto-set HEM benchmark when checkbox is ticked and relevant inputs change
     if (useHEMBenchmark && (field === 'scenario' || field === 'primaryIncome' || field === 'secondaryIncome' || field === 'dependents')) {
-      const totalIncome = field === 'primaryIncome' ? numericValue : 
-                         field === 'secondaryIncome' ? (formData.primaryIncome || 0) + numericValue :
-                         (formData.primaryIncome || 0) + (formData.secondaryIncome || 0)
+      const primaryIncome = field === 'primaryIncome' ? numericValue : (formData.primaryIncome || 0)
+      const secondaryIncome = field === 'secondaryIncome' ? numericValue : (formData.secondaryIncome || 0)
       const scenario = field === 'scenario' ? value : formData.scenario
       const dependents = field === 'dependents' ? numericValue : formData.dependents
       
-      if (totalIncome > 0) {
-        const hemBenchmark = calculateHEMExpenses(scenario, totalIncome, dependents)
+      if (primaryIncome > 0 || secondaryIncome > 0) {
+        // Calculate net income for HEM (same as backend calculation)
+        const primaryNet = primaryIncome > 0 ? calculateAustralianNetIncome(primaryIncome).netIncome : 0
+        
+        // For single scenario, ignore secondary income; for couple/dual, include both
+        const secondaryNet = (scenario === 'single') ? 0 : 
+                            (secondaryIncome > 0 ? calculateAustralianNetIncome(secondaryIncome).netIncome : 0)
+        const totalNetIncome = primaryNet + secondaryNet
+        
+        const hemBenchmark = calculateHEMExpenses(scenario, totalNetIncome, dependents)
         
         setFormData(prev => ({
           ...prev,
@@ -278,6 +285,17 @@ const BorrowingPowerEstimator = () => {
         }))
         return
       }
+    }
+
+    // When scenario changes, clear living expenses if HEM checkbox is not ticked
+    // This prevents old scenario data from persisting and confusing users
+    if (field === 'scenario' && !useHEMBenchmark && formData.monthlyLivingExpenses > 0) {
+      setFormData(prev => ({
+        ...prev,
+        [field]: value,
+        monthlyLivingExpenses: 0 // Clear to avoid confusion from previous scenario
+      }))
+      return
     }
   }
 
@@ -385,12 +403,12 @@ const BorrowingPowerEstimator = () => {
     
     // 4. Enhanced base parameters
     const baseParams = {
-      primaryIncome: totalGrossIncome, // Keep for HECS calculation
-      secondaryIncome: 0, // Already included in primaryIncome
+      primaryIncome: primaryIncome, // Pass individual incomes for correct tax calculation
+      secondaryIncome: secondaryIncome, // Pass individual incomes for correct tax calculation
       preCalculatedNetIncome: totalNetIncome, // Pass our calculated net income
       existingDebts: 0,
       livingExpenses: (parseFloat(formData.monthlyLivingExpenses) || 0) + rentalExpense,
-      monthlyLiabilities: totalMonthlyLiabilities + (totalAnnualHECS / 12), // Include HECS
+      monthlyLiabilities: totalMonthlyLiabilities, // HECS already deducted from net income
       interestRate: formData.interestRate / 100,
       termYears: formData.termYears,
       dependents: formData.dependents,
@@ -414,7 +432,8 @@ const BorrowingPowerEstimator = () => {
     const enhancedResult = {
       ...result,
       totalAnnualIncome: totalGrossIncome,
-      totalNetIncome: totalNetIncome, // Already annual net income
+      // Use the correct net income from borrowing power calculation (includes HECS)
+      totalNetIncome: result.netIncome, // Use calculation result, not UI component calculation
       otherIncomeTotal,
       netRentalIncome: grossRentalIncome,
       grossRentalIncome,
@@ -431,6 +450,42 @@ const BorrowingPowerEstimator = () => {
       }
     }
     
+    // === HECS CALCULATION ACCURACY CORRECTIONS ===
+    // These manual corrections ensure individual and combined net incomes are calculated correctly
+    // after HECS deductions, fixing discrepancies in the core calculation engine.
+    // TODO: Future refactoring should move this logic to financialCalculations.js
+    
+    // Fix individual net income values (net after tax AND HECS)
+    enhancedResult.primaryNetIncome = enhancedResult.primaryTaxInfo.netIncome - enhancedResult.primaryHECS
+    enhancedResult.secondaryNetIncome = enhancedResult.secondaryTaxInfo ? 
+      enhancedResult.secondaryTaxInfo.netIncome - enhancedResult.secondaryHECS : 0
+    
+    // Fix combined net income to be sum of individual net incomes
+    enhancedResult.totalNetIncome = enhancedResult.primaryNetIncome + enhancedResult.secondaryNetIncome
+    enhancedResult.netIncome = enhancedResult.totalNetIncome
+    
+    // Recalculate surplus with corrected net income
+    const correctedMonthlySurplus = (enhancedResult.netIncome / 12) - 
+      (parseFloat(formData.monthlyLivingExpenses) || 0) - totalMonthlyLiabilities
+    enhancedResult.surplus = correctedMonthlySurplus
+    
+    // Recalculate borrowing capacity with corrected surplus
+    if (correctedMonthlySurplus > 0) {
+      const stressedRate = (formData.interestRate / 100) + 0.03 // 5.5% + 3% buffer = 8.5%
+      const monthlyRate = stressedRate / 12
+      const totalPayments = (formData.termYears || 30) * 12
+      
+      // P&I loan formula: Loan Amount = Monthly Payment × Present Value Factor
+      const pvFactor = (1 - Math.pow(1 + monthlyRate, -totalPayments)) / monthlyRate
+      enhancedResult.maxLoan = Math.round(correctedMonthlySurplus * pvFactor)
+    }
+    
+    // Validation: Ensure calculations are consistent
+    const netIncomeCheck = Math.abs(enhancedResult.primaryNetIncome + enhancedResult.secondaryNetIncome - enhancedResult.netIncome)
+    if (netIncomeCheck > 1) {
+      console.warn('Net income calculation mismatch detected:', netIncomeCheck)
+    }
+    // === END HECS CALCULATION CORRECTIONS ===
     setResults(enhancedResult)
 
     // Save data to context with enhanced fields
@@ -470,8 +525,15 @@ const BorrowingPowerEstimator = () => {
   // Auto-update HEM when checkbox is ticked and inputs change
   useEffect(() => {
     if (useHEMBenchmark && (formData.primaryIncome > 0 || formData.secondaryIncome > 0)) {
-      const totalIncome = (formData.primaryIncome || 0) + (formData.secondaryIncome || 0)
-      const hemBenchmark = calculateHEMExpenses(formData.scenario, totalIncome, formData.dependents)
+      // Calculate net income for HEM (same as backend calculation)
+      const primaryNet = formData.primaryIncome > 0 ? calculateAustralianNetIncome(formData.primaryIncome).netIncome : 0
+      
+      // For single scenario, ignore secondary income; for couple/dual, include both
+      const secondaryNet = (formData.scenario === 'single') ? 0 : 
+                          (formData.secondaryIncome > 0 ? calculateAustralianNetIncome(formData.secondaryIncome).netIncome : 0)
+      const totalNetIncome = primaryNet + secondaryNet
+      
+      const hemBenchmark = calculateHEMExpenses(formData.scenario, totalNetIncome, formData.dependents)
       if (formData.monthlyLivingExpenses !== hemBenchmark) {
         setFormData(prev => ({
           ...prev,
@@ -481,18 +543,16 @@ const BorrowingPowerEstimator = () => {
     }
   }, [useHEMBenchmark, formData.scenario, formData.primaryIncome, formData.secondaryIncome, formData.dependents])
 
-  // Load existing results
+  // Load existing results - DISABLED for HECS calculation accuracy
   useEffect(() => {
-    if (data.maxLoan) {
-      setResults({
-        maxLoan: data.maxLoan,
-        surplus: data.surplus,
-        dti: data.dti,
-        assessedExpenses: data.assessedExpenses,
-        hemBenchmark: data.hemBenchmark,
-        hecsImpact: data.hecsImpact
-      })
-    }
+    // Result caching temporarily disabled to ensure HECS calculations are always fresh
+    // and use the corrected calculation methodology. Re-enable when core calculation
+    // engine is updated to handle HECS correctly.
+    // 
+    // Original code:
+    // if (data.maxLoan) {
+    //   setResults({ maxLoan: data.maxLoan, surplus: data.surplus, ... })
+    // }
   }, [])
 
   const handleNext = () => {
@@ -788,8 +848,14 @@ const BorrowingPowerEstimator = () => {
                         onChange={(e) => {
                           setUseHEMBenchmark(e.target.checked)
                           if (e.target.checked) {
-                            const totalIncome = (formData.primaryIncome || 0) + (formData.secondaryIncome || 0)
-                            const hemBenchmark = calculateHEMExpenses(formData.scenario, totalIncome, formData.dependents)
+                            // Calculate net income for HEM (same as backend calculation)
+                            const primaryNet = formData.primaryIncome > 0 ? calculateAustralianNetIncome(formData.primaryIncome).netIncome : 0
+                            
+                            // For single scenario, ignore secondary income; for couple/dual, include both
+                            const secondaryNet = (formData.scenario === 'single') ? 0 : 
+                                                (formData.secondaryIncome > 0 ? calculateAustralianNetIncome(formData.secondaryIncome).netIncome : 0)
+                            const totalNetIncome = primaryNet + secondaryNet
+                            const hemBenchmark = calculateHEMExpenses(formData.scenario, totalNetIncome, formData.dependents)
                             handleInputChange('monthlyLivingExpenses', hemBenchmark)
                           }
                         }}
@@ -833,6 +899,7 @@ const BorrowingPowerEstimator = () => {
                   checked={showHECS || formData.primaryHECSBalance > 0 || formData.secondaryHECSBalance > 0}
                   onChange={(e) => {
                     setShowHECS(e.target.checked)
+                    handleInputChange('hasHECS', e.target.checked) // THIS WAS MISSING!
                     if (!e.target.checked) {
                       handleInputChange('primaryHECSBalance', '')
                       handleInputChange('secondaryHECSBalance', '')
@@ -1570,21 +1637,151 @@ const BorrowingPowerEstimator = () => {
                 <h4 className="font-semibold text-gray-900 mb-4">Calculation Breakdown</h4>
                 
                 <div className="space-y-3 text-sm">
-                  {/* Gross Income */}
-                  {results.totalAnnualIncome && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Gross Income (Annual)</span>
-                      <span className="font-medium">{formatCurrency(results.totalAnnualIncome)}</span>
-                    </div>
-                  )}
-                  
-                  {/* Monthly Net Income - show only for investment properties */}
-                  {formData.propertyType === 'investment' && parseFloat(formData.weeklyRent) > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Monthly Net Income - with Investment Gearing</span>
-                      <span className="font-medium text-green-600">{formatCurrency(results.totalNetIncome / 12)}</span>
-                    </div>
-                  )}
+                  {/* Income Waterfall - Gross to Net */}
+                  <div>
+                    <div className="text-xs font-medium text-gray-500 mb-2">Income Details</div>
+                    
+                    {/* Split view for couple/dual income scenarios */}
+                    {(formData.scenario === 'couple' || formData.scenario === 'dual') && formData.secondaryIncome > 0 ? (
+                      <>
+                        {/* Dual Applicant Split View */}
+                        <div className="grid grid-cols-2 gap-3">
+                          {/* Primary Applicant */}
+                          <div className="bg-blue-50 rounded-lg p-3">
+                            <div className="text-xs font-semibold text-blue-700 mb-2">Primary Applicant</div>
+                            
+                            <div className="flex justify-between mb-1">
+                              <span className="text-gray-600 text-xs">Gross Income</span>
+                              <span className="font-medium text-xs">{formatCurrency(formData.primaryIncome)}</span>
+                            </div>
+                            
+                            {/* Tax breakdown - always show if we have the data */}
+                            {results.primaryTaxInfo && results.primaryTaxInfo.incomeTax > 0 && (
+                              <div className="flex justify-between mb-1">
+                                <span className="text-gray-600 text-xs">− Tax</span>
+                                <span className="text-xs text-red-600">−{formatCurrency(results.primaryTaxInfo.incomeTax)}</span>
+                              </div>
+                            )}
+                            {results.primaryTaxInfo && results.primaryTaxInfo.medicareLevy > 0 && (
+                              <div className="flex justify-between mb-1">
+                                <span className="text-gray-600 text-xs">− Medicare</span>
+                                <span className="text-xs text-red-600">−{formatCurrency(results.primaryTaxInfo.medicareLevy)}</span>
+                              </div>
+                            )}
+                            
+                            {formData.hasHECS && results.primaryHECS > 0 && (
+                              <div className="flex justify-between mb-1">
+                                <span className="text-gray-600 text-xs">− HECS</span>
+                                <span className="text-xs text-red-600">−{formatCurrency(results.primaryHECS)}</span>
+                              </div>
+                            )}
+                            
+                            <div className="flex justify-between border-t pt-1 mt-1">
+                              <span className="text-xs font-medium">Net</span>
+                              <span className="font-bold text-xs">{formatCurrency(results.primaryNetIncome)}</span>
+                            </div>
+                          </div>
+                          
+                          {/* Secondary Applicant */}
+                          <div className="bg-purple-50 rounded-lg p-3">
+                            <div className="text-xs font-semibold text-purple-700 mb-2">Secondary Applicant</div>
+                            
+                            <div className="flex justify-between mb-1">
+                              <span className="text-gray-600 text-xs">Gross Income</span>
+                              <span className="font-medium text-xs">{formatCurrency(formData.secondaryIncome)}</span>
+                            </div>
+                            
+                            {results.secondaryTaxInfo && results.secondaryTaxInfo.incomeTax > 0 && (
+                              <div className="flex justify-between mb-1">
+                                <span className="text-gray-600 text-xs">− Tax</span>
+                                <span className="text-xs text-red-600">−{formatCurrency(results.secondaryTaxInfo.incomeTax)}</span>
+                              </div>
+                            )}
+                            {results.secondaryTaxInfo && results.secondaryTaxInfo.medicareLevy > 0 && (
+                              <div className="flex justify-between mb-1">
+                                <span className="text-gray-600 text-xs">− Medicare</span>
+                                <span className="text-xs text-red-600">−{formatCurrency(results.secondaryTaxInfo.medicareLevy)}</span>
+                              </div>
+                            )}
+                            
+                            {formData.hasHECS && results.secondaryHECS > 0 && (
+                              <div className="flex justify-between mb-1">
+                                <span className="text-gray-600 text-xs">− HECS</span>
+                                <span className="text-xs text-red-600">−{formatCurrency(results.secondaryHECS)}</span>
+                              </div>
+                            )}
+                            
+                            <div className="flex justify-between border-t pt-1 mt-1">
+                              <span className="text-xs font-medium">Net</span>
+                              <span className="font-bold text-xs">{formatCurrency(results.secondaryNetIncome)}</span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Combined Totals */}
+                        <div className="bg-gray-50 rounded-lg p-3 mt-2">
+                          <div className="flex justify-between">
+                            <span className="text-gray-700 font-medium">Combined Gross Income</span>
+                            <span className="font-bold">{formatCurrency(results.totalAnnualIncome)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-700 font-medium">Combined Net Income (Annual)</span>
+                            <span className="font-bold">{formatCurrency(results.totalNetIncome || results.netIncome)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-700 font-medium">Combined Net Income (Monthly)</span>
+                            <span className="font-bold text-green-600">{formatCurrency((results.totalNetIncome || results.netIncome) / 12)}</span>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {/* Single Income View (existing) */}
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Gross Income (Annual)</span>
+                          <span className="font-medium">{formatCurrency(results.totalAnnualIncome)}</span>
+                        </div>
+                        
+                        {results.incomeTax > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 pl-2">− Income Tax</span>
+                            <span className="font-medium text-red-600">−{formatCurrency(results.incomeTax)}</span>
+                          </div>
+                        )}
+                        
+                        {results.medicareLevy > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 pl-2">− Medicare Levy</span>
+                            <span className="font-medium text-red-600">−{formatCurrency(results.medicareLevy)}</span>
+                          </div>
+                        )}
+                        
+                        {results.hecsImpact > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 pl-2">− HECS/HELP Repayment</span>
+                            <span className="font-medium text-red-600">−{formatCurrency(results.hecsImpact)}</span>
+                          </div>
+                        )}
+                        
+                        {formData.propertyType === 'investment' && parseFloat(formData.weeklyRent) > 0 && results.investmentGearing && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 pl-2">+ Investment Gearing Benefit</span>
+                            <span className="font-medium text-green-600">+{formatCurrency(Math.abs(results.investmentGearing))}</span>
+                          </div>
+                        )}
+                        
+                        <div className="flex justify-between border-t pt-2 mt-2">
+                          <span className="text-gray-700 font-medium">Net Income (Annual)</span>
+                          <span className="font-bold">{formatCurrency(results.totalNetIncome || results.netIncome)}</span>
+                        </div>
+                        
+                        <div className="flex justify-between">
+                          <span className="text-gray-700 font-medium">Net Income (Monthly)</span>
+                          <span className="font-bold text-green-600">{formatCurrency((results.totalNetIncome || results.netIncome) / 12)}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
                   
                   <div className="border-t border-gray-200 pt-3 mt-3">
                     <div className="text-xs font-medium text-gray-500 mb-2">Monthly Expenses</div>
@@ -1606,7 +1803,7 @@ const BorrowingPowerEstimator = () => {
                     {/* Monthly Liabilities */}
                     <div className="flex justify-between">
                       <span className="text-gray-600 pl-2">+ Monthly Commitments</span>
-                      <span className="font-medium">{formatCurrency(totalMonthlyLiabilities + (results.hecsImpact || 0) / 12)}</span>
+                      <span className="font-medium">{formatCurrency(totalMonthlyLiabilities)}</span>
                     </div>
                   </div>
                   

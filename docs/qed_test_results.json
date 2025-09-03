@@ -1,0 +1,50 @@
+[
+  {
+    "scenario_name": "Scenario 1: Single, Low Income, Owner-Occupied",
+    "qed_result": 465000,
+    "our_app_result": 312530,
+    "expected_min": 350000,
+    "expected_max": 400000,
+    "worksheet_used": "Single income"
+  },
+  {
+    "scenario_name": "Scenario 2: Single, Medium Income, Investment",
+    "qed_result": 465000,
+    "our_app_result": 502553,
+    "expected_min": 600000,
+    "expected_max": 700000,
+    "worksheet_used": "Single income"
+  },
+  {
+    "scenario_name": "Scenario 3: Couple, High Income, Owner-Occupied",
+    "qed_result": 750000,
+    "our_app_result": 237413,
+    "expected_min": 900000,
+    "expected_max": 1000000,
+    "worksheet_used": "Dual income"
+  },
+  {
+    "scenario_name": "Scenario 4: Couple, High Income, Investment",
+    "qed_result": 750000,
+    "our_app_result": 1060237,
+    "expected_min": 1200000,
+    "expected_max": 1500000,
+    "worksheet_used": "Dual income"
+  },
+  {
+    "scenario_name": "Scenario 5: Single, Very High Income, Investment",
+    "qed_result": 465000,
+    "our_app_result": 660016,
+    "expected_min": 1500000,
+    "expected_max": 2000000,
+    "worksheet_used": "Single income"
+  },
+  {
+    "scenario_name": "Scenario 6: Young Couple, Entry Level",
+    "qed_result": 750000,
+    "our_app_result": 425720,
+    "expected_min": 650000,
+    "expected_max": 750000,
+    "worksheet_used": "Dual income"
+  }
+]

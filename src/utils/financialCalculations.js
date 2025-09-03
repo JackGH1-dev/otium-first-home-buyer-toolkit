@@ -616,31 +616,49 @@ export const calculateBorrowingPower = (params) => {
     preCalculatedNetIncome = null // Allow passing pre-calculated net income
   } = params
 
+  // Calculate total gross income for HECS calculation
+  const totalGrossIncome = primaryIncome + secondaryIncome
+  
+  // Calculate HECS/HELP repayment based on INDIVIDUAL incomes (as per ATO)
+  const primaryHECS = hasHECS ? calculateHECSRepayment(primaryIncome) : 0
+  const secondaryHECS = hasHECS && secondaryIncome > 0 ? calculateHECSRepayment(secondaryIncome) : 0
+  const annualHECSPayment = primaryHECS + secondaryHECS
+  const monthlyHECSPayment = annualHECSPayment / 12
+
+  // Calculate tax components for breakdown display (ALWAYS calculate for UI display)
+  const primaryTaxInfo = calculateAustralianNetIncome(primaryIncome)
+  const secondaryTaxInfo = secondaryIncome > 0 ? calculateAustralianNetIncome(secondaryIncome) : { incomeTax: 0, medicareLevy: 0, netIncome: 0 }
+  const totalIncomeTax = primaryTaxInfo.incomeTax + secondaryTaxInfo.incomeTax
+  const totalMedicareLevy = primaryTaxInfo.medicareLevy + secondaryTaxInfo.medicareLevy
+  
   // Use pre-calculated net income if provided, otherwise calculate from gross
-  let totalNetIncome, monthlyNetIncome, totalGrossIncome, primaryNetIncome, secondaryNetIncome
+  let totalNetIncome, monthlyNetIncome, primaryNetIncome, secondaryNetIncome
   
   if (preCalculatedNetIncome) {
     // Use pre-calculated net income (for investment property scenarios)
+    // HECS should already be accounted for in pre-calculated scenarios
     totalNetIncome = preCalculatedNetIncome
     monthlyNetIncome = totalNetIncome / 12
-    totalGrossIncome = primaryIncome + secondaryIncome // For HECS calculation
     
-    // For display purposes, approximate individual components
-    // (Note: This is an approximation since investment property affects total tax calculation)
-    primaryNetIncome = totalNetIncome // Most income attributed to primary
-    secondaryNetIncome = 0 // Secondary already included in preCalculated total
+    // For display purposes, use the tax calculation net incomes
+    primaryNetIncome = primaryTaxInfo.netIncome - (annualHECSPayment * (primaryIncome / totalGrossIncome))
+    secondaryNetIncome = secondaryTaxInfo.netIncome - (annualHECSPayment * (secondaryIncome / totalGrossIncome))
   } else {
-    // Calculate net income after tax for both incomes (standard scenario)
-    primaryNetIncome = calculateAustralianNetIncome(primaryIncome).netIncome
-    secondaryNetIncome = secondaryIncome > 0 ? calculateAustralianNetIncome(secondaryIncome).netIncome : 0
+    // Calculate net income after tax AND HECS for both incomes (standard scenario)
+    // HECS is deducted from gross income like a tax, not from net income
+    const adjustedPrimaryIncome = primaryIncome - (annualHECSPayment * (primaryIncome / totalGrossIncome))
+    const adjustedSecondaryIncome = secondaryIncome - (annualHECSPayment * (secondaryIncome / totalGrossIncome))
+    
+    primaryNetIncome = calculateAustralianNetIncome(adjustedPrimaryIncome).netIncome + (adjustedPrimaryIncome < primaryIncome ? primaryIncome - adjustedPrimaryIncome : 0)
+    secondaryNetIncome = secondaryIncome > 0 ? 
+      calculateAustralianNetIncome(adjustedSecondaryIncome).netIncome + (adjustedSecondaryIncome < secondaryIncome ? secondaryIncome - adjustedSecondaryIncome : 0) : 0
+    
+    // Calculate net income after tax for each individual, then deduct their HECS
+    primaryNetIncome = calculateAustralianNetIncome(primaryIncome).netIncome - primaryHECS
+    secondaryNetIncome = secondaryIncome > 0 ? calculateAustralianNetIncome(secondaryIncome).netIncome - secondaryHECS : 0
     totalNetIncome = primaryNetIncome + secondaryNetIncome
     monthlyNetIncome = totalNetIncome / 12
-    totalGrossIncome = primaryIncome + secondaryIncome
   }
-
-  // Calculate HECS/HELP repayment based on gross income (as per ATO)
-  const annualHECSPayment = hasHECS ? calculateHECSRepayment(totalGrossIncome) : 0
-  const monthlyHECSPayment = annualHECSPayment / 12
 
   // Calculate HEM benchmark and assessed expenses
   const hemBenchmark = calculateHEMExpenses(scenario, totalNetIncome, dependents)
@@ -654,8 +672,8 @@ export const calculateBorrowingPower = (params) => {
   // Stressed interest rate
   const stressedRate = interestRate + stressTestBuffer
 
-  // Calculate serviceable surplus using net income
-  const totalMonthlyCommitments = assessedExpenses + monthlyDebtPayments + monthlyHECSPayment
+  // Calculate serviceable surplus using net income (HECS already deducted from net income)
+  const totalMonthlyCommitments = assessedExpenses + monthlyDebtPayments
   const surplus = monthlyNetIncome - totalMonthlyCommitments
 
   if (surplus <= 0) {
@@ -670,7 +688,13 @@ export const calculateBorrowingPower = (params) => {
       grossIncome: totalGrossIncome,
       netIncome: totalNetIncome,
       primaryNetIncome,
-      secondaryNetIncome
+      secondaryNetIncome,
+      incomeTax: totalIncomeTax,
+      medicareLevy: totalMedicareLevy,
+      primaryTaxInfo,
+      secondaryTaxInfo,
+      primaryHECS,
+      secondaryHECS
     }
   }
 
@@ -733,6 +757,12 @@ export const calculateBorrowingPower = (params) => {
     netIncome: totalNetIncome,
     primaryNetIncome: Math.round(primaryNetIncome),
     secondaryNetIncome: Math.round(secondaryNetIncome),
+    incomeTax: totalIncomeTax,
+    medicareLevy: totalMedicareLevy,
+    primaryTaxInfo,
+    secondaryTaxInfo,
+    primaryHECS,
+    secondaryHECS,
     // Payment frequency breakdown
     paymentBreakdown: {
       monthly: Math.round(maxMonthlyPayment),
@@ -803,37 +833,41 @@ export const calculatePIAfterIO = (loanAmount, annualRate, remainingYears) => {
   return payment
 }
 
-// HECS/HELP repayment thresholds and rates (2025-26 financial year)
-export const HECS_HELP_THRESHOLDS = [
-  { min: 0, max: 51549, rate: 0 },
-  { min: 51550, max: 59517, rate: 0.01 },
-  { min: 59518, max: 63089, rate: 0.02 },
-  { min: 63090, max: 66875, rate: 0.025 },
-  { min: 66876, max: 70888, rate: 0.03 },
-  { min: 70889, max: 75140, rate: 0.035 },
-  { min: 75141, max: 79649, rate: 0.04 },
-  { min: 79650, max: 84429, rate: 0.045 },
-  { min: 84430, max: 89494, rate: 0.05 },
-  { min: 89495, max: 94865, rate: 0.055 },
-  { min: 94866, max: 100557, rate: 0.06 },
-  { min: 100558, max: 106590, rate: 0.065 },
-  { min: 106591, max: 112985, rate: 0.07 },
-  { min: 112986, max: 119764, rate: 0.075 },
-  { min: 119765, max: 126950, rate: 0.08 },
-  { min: 126951, max: 134568, rate: 0.085 },
-  { min: 134569, max: 142642, rate: 0.09 },
-  { min: 142643, max: 151200, rate: 0.095 },
-  { min: 151201, max: Infinity, rate: 0.1 }
-]
+// HECS/HELP repayment - NEW 2025-26 MARGINAL SYSTEM
+// Major reform: Marginal repayment system applies from 2025-26 income year
+export const HECS_HELP_CONFIG_2025_26 = {
+  minimumThreshold: 67000,      // New minimum threshold
+  brackets: [
+    { min: 67001, max: 125000, rate: 0.15 },      // 15% for $67,001-$125,000
+    { min: 125001, max: 179285, baseAmount: 8700, rate: 0.17, thresholdIncome: 125000 }, // $8,700 + 17% over $125k
+  ],
+  highIncomeThreshold: 179286,  // $179,286 and over
+  highIncomeRate: 0.10          // 10% of total income for high earners
+}
 
-// Calculate HECS/HELP annual repayment based on income
+// Calculate HECS/HELP annual repayment using exact ATO 2025-26 table
 export const calculateHECSRepayment = (annualIncome) => {
-  for (const threshold of HECS_HELP_THRESHOLDS) {
-    if (annualIncome >= threshold.min && annualIncome <= threshold.max) {
-      return annualIncome * threshold.rate
-    }
+  const config = HECS_HELP_CONFIG_2025_26
+  
+  // No repayment if below minimum threshold
+  if (annualIncome <= config.minimumThreshold) {
+    return 0
   }
-  return 0
+  
+  // High earners: 10% of total income ($179,286 and over)
+  if (annualIncome >= config.highIncomeThreshold) {
+    return Math.round(annualIncome * config.highIncomeRate)
+  }
+  
+  // Bracket 1: $67,001 – $125,000 → 15% of excess over $67,000
+  if (annualIncome <= 125000) {
+    const incomeAboveThreshold = annualIncome - config.minimumThreshold
+    return Math.round(incomeAboveThreshold * 0.15)
+  }
+  
+  // Bracket 2: $125,001 – $179,285 → $8,700 plus 17% of excess over $125,000  
+  const excessOver125k = annualIncome - 125000
+  return Math.round(8700 + (excessOver125k * 0.17))
 }
 
 // HEM (Household Expenditure Measure) data based on updated 2024-25 research
@@ -847,7 +881,7 @@ export const HEM_BENCHMARKS = {
     income_adjustment: 0.15 // Additional 15% for higher income brackets
   },
   dependent: {
-    cost: 15000, // Additional annual cost per dependent (proportional adjustment)
+    cost: 4800, // Additional annual cost per dependent (~$400/month as per industry standard)
     age_multiplier: {
       under_5: 0.8,
       age_5_12: 1.0,
